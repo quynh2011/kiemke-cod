@@ -47,6 +47,9 @@ const KK_ROLES = ['NV', 'BUU_CUC', 'AM', 'QUAN_LY'];
 // Vai tro luu trong sheet: '' / TU_DONG = tu xac dinh (AM neu co ID AM trong Cauhinh, con lai NV giao)
 const KK_ROLE_AUTO = 'TU_DONG';
 const KK_HTML_FILE = 'KiemKeApp';   // ten file HTML giao dien trong project Apps Script
+// Tram chuyen tiep (Apps Script tren Gmail CA NHAN, deploy "Bat ky ai") - de nhan vien KHONG co Gmail cong ty dung duoc app.
+// Dan link /exec cua tram (file KiemKeRelay.gs) vao day, roi chay ham KKCaiRelay 1 lan.
+const KK_RELAY_URL = '';
 const KK_ROLE_VN = { NV: 'Nhân viên giao', BUU_CUC: 'Nhân viên bưu cục', AM: 'AM', QUAN_LY: 'Quản lý' };
 const KK_TOKEN_HOURS = 14;
 const KK_MAX_LOGIN_FAIL = 5;
@@ -735,6 +738,32 @@ function KKCaiTrigger() {
     if (t.getHandlerFunction() === 'KKTongHopNgay') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('KKTongHopNgay').timeBased().everyDays(1).atHour(21).inTimezone(Session.getScriptTimeZone()).create();
+}
+
+// ================================================================
+// TRAM CHUYEN TIEP (cho nhan vien khong co tai khoan Google cong ty)
+// ================================================================
+// Link /exec cua cong ty chi mo cho tai khoan trong to chuc. Tram tren Gmail ca nhan nhan yeu cau tu app
+// va chuyen vao day kem "khoa truy cap" tam thoi (het han sau ~1 gio) cua chu script.
+// Ham nay gui khoa moi sang tram; trigger chay 30 phut/lan de khoa luon con han. Du lieu van nam o tai khoan cong ty.
+function KKGuiKhoaRelay() {
+  if (!KK_RELAY_URL) throw new Error('Chưa dán link trạm chuyển tiếp vào KK_RELAY_URL (đầu file KiemKe)');
+  DriveApp.getRootFolder(); // giu quyen Drive trong khoa (bat buoc de goi duoc Web App)
+  const r = UrlFetchApp.fetch(KK_RELAY_URL, { method: 'post', contentType: 'text/plain;charset=utf-8',
+    payload: JSON.stringify({ action: '__token', token: ScriptApp.getOAuthToken() }), muteHttpExceptions: true });
+  const t = r.getContentText();
+  let j = {};
+  try { j = JSON.parse(t); } catch (x) {}
+  if (!j.ok) throw new Error('Trạm chuyển tiếp không nhận khoá: ' + (j.error || ('HTTP ' + r.getResponseCode() + ' ' + t.slice(0, 200))));
+  console.log('[KiemKe] Tram chuyen tiep da nhan khoa moi.');
+}
+function KKCaiRelay() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'KKGuiKhoaRelay') ScriptApp.deleteTrigger(t);
+  });
+  KKGuiKhoaRelay();
+  ScriptApp.newTrigger('KKGuiKhoaRelay').timeBased().everyMinutes(30).create();
+  console.log('[KiemKe] Da cai trigger gui khoa 30 phut/lan. Nhan vien dung link GitHub cua app.');
 }
 
 // ================================================================

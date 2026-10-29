@@ -58,6 +58,8 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .field input, .field select, .inp { width: 100%; height: 44px; border: 1px solid var(--line); border-radius: 10px;
   padding: 0 12px; background: var(--card); }
+.field input[type=date] { -webkit-appearance: none; appearance: none; min-width: 0; display: block; font-size: 15px; text-align: left; }
+.field input[type=date]::-webkit-date-and-time-value { text-align: left; }
 .field input:focus, .field select:focus, .inp:focus { outline: 2px solid var(--brand); border-color: transparent; }
 .hint { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
 .err { color: var(--miss); font-size: 13.5px; min-height: 19px; }
@@ -600,6 +602,7 @@ async function flush() {
         if (d && r.result === 'Đúng danh sách') d.checked[r.order] = { time: r.time, by: S.user.ten, thumb: r.thumb, photo: r.photo };
         if (d && r.result === 'Ngoài danh sách') { const x = d.extra.find(e => e.order === r.order); if (x) { x.thumb = r.thumb; x.photo = r.photo; } }
         S.thumbs[r.thumb] = it.thumb;
+        S.report = null;
         if (r.note) toast(r.note, 6000);
       } catch (e) {
         if (e.auth) { onApiError(e); break; }
@@ -726,7 +729,7 @@ function viewReport() {
     $('#rFrom').value = d(a); $('#rTo').value = d(b); runReport(); };
   document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const v = b.dataset.q.split(','); setQ(+v[0], +v[1]); });
   $('#rRun').onclick = runReport;
-  if (S.report) { fillHubs(S.report.hubs); renderReport(); } else runReport();
+  runReport(); // luon tong hop lai khi vao tab (khong dung ket qua cu)
 }
 function fillHubs(hubs) {
   const sel = $('#rHub'); if (!sel || sel.options.length > 1) return;
@@ -734,7 +737,8 @@ function fillHubs(hubs) {
   sel.value = S.rep.hub;
 }
 async function runReport() {
-  S.rep.from = $('#rFrom').value; S.rep.to = $('#rTo').value; S.rep.hub = $('#rHub').value;
+  S.rep.from = $('#rFrom').value; S.rep.to = $('#rTo').value;
+  if ($('#rHub').options.length > 1) S.rep.hub = $('#rHub').value; // giu bo loc buu cuc khi vao lai tab
   $('#rOut').innerHTML = '<div class="empty">Đang tổng hợp…</div>';
   try {
     S.report = await api('report', { from: isoToVN(S.rep.from), to: isoToVN(S.rep.to), hub: S.rep.hub });

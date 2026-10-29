@@ -205,15 +205,23 @@ const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const CFG = window.KK_CONFIG || {};
 const qs = new URLSearchParams(location.search);
 if (qs.get('api')) store.set('api', qs.get('api'));
-const API = qs.get('demo') ? '' : (store.get('api', '') || CFG.api || '');
+// Chay ben trong Apps Script (mo tu link /exec): goi thang backend bang google.script.run
+const GAS = !!(window.google && google.script && google.script.run);
+const API = GAS ? 'gas' : qs.get('demo') ? '' : (store.get('api', '') || CFG.api || '');
 const DEMO = !API;
 
 async function api(action, data) {
   const body = Object.assign({ action, token: S.token }, data || {});
   if (DEMO) return Demo.call(body);
-  const res = await fetch(API, { method: 'POST', redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
-  const j = await res.json();
+  let j;
+  if (GAS) {
+    const t = await new Promise((ok, no) => google.script.run.withSuccessHandler(ok).withFailureHandler(no).kkApi(JSON.stringify(body)));
+    j = JSON.parse(t);
+  } else {
+    const res = await fetch(API, { method: 'POST', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+    j = await res.json();
+  }
   if (!j.ok) { const e = new Error(j.error || 'Lỗi máy chủ'); e.auth = !!j.auth; e.needSetup = !!j.needSetup; throw e; }
   return j;
 }

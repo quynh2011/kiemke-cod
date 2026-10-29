@@ -8,6 +8,16 @@ Web app trên điện thoại để kiểm kê **đơn COD giá trị cao** (dan
 - **Phân quyền**: nhân viên giao / nhân viên bưu cục / AM / quản lý.
 - **Báo cáo** theo khoảng ngày: theo bưu cục, NV giao, người kiểm, AM, ngày. Xem ảnh nét, tải CSV.
 
+## Tài khoản Google nội bộ (ví dụ @ghn.vn)
+
+Tài khoản công ty chỉ deploy được **"Bất kỳ ai trong tổ chức"**, nên trang GitHub Pages không gọi được backend.
+Khi đó app chạy **thẳng từ link `/exec`** của Apps Script:
+
+1. Trong project Apps Script, bấm **+** → **HTML**, đặt tên **`KiemKeApp`**, dán toàn bộ nội dung file `KiemKeApp.html`.
+2. Deploy lại (Version: New version). Nhân viên mở link `/exec` bằng tài khoản Google công ty trên điện thoại.
+
+`KiemKeApp.html` là bản gộp của `index.html` (thư viện quét lấy từ CDN). Sửa `index.html` thì tạo lại file này.
+
 ## Cấu trúc
 
 | File | Đặt ở đâu |

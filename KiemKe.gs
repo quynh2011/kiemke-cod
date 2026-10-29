@@ -46,6 +46,7 @@ const KK_ADMIN = { ma: '3172684', ten: 'Phạm Văn Quỳnh' };
 const KK_ROLES = ['NV', 'BUU_CUC', 'AM', 'QUAN_LY'];
 // Vai tro luu trong sheet: '' / TU_DONG = tu xac dinh (AM neu co ID AM trong Cauhinh, con lai NV giao)
 const KK_ROLE_AUTO = 'TU_DONG';
+const KK_HTML_FILE = 'KiemKeApp';   // ten file HTML giao dien trong project Apps Script
 const KK_ROLE_VN = { NV: 'Nhân viên giao', BUU_CUC: 'Nhân viên bưu cục', AM: 'AM', QUAN_LY: 'Quản lý' };
 const KK_TOKEN_HOURS = 14;
 const KK_MAX_LOGIN_FAIL = 5;
@@ -69,28 +70,47 @@ const U = {}; KK_USER_HEADERS.forEach(function (h, i) { U[h] = i; });
 // ================================================================
 // WEB APP
 // ================================================================
+// Mo link /exec tren dien thoai -> chay thang app kiem ke (file HTML "KiemKeApp" trong project).
+// Tai khoan Google noi bo (vd ghn.vn) chi deploy duoc "Bat ky ai trong to chuc" -> app phai chay tu link nay.
+// ?ping=1 -> tra JSON kiem tra backend
 function doGet(e) {
-  return kkJson_({ ok: true, app: 'KiemKe COD', time: new Date().toISOString() });
+  if (e && e.parameter && e.parameter.ping) return kkJson_({ ok: true, app: 'KiemKe COD', time: new Date().toISOString() });
+  return HtmlService.createHtmlOutputFromFile(KK_HTML_FILE)
+    .setTitle('Kiểm kê COD')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 function doPost(e) {
+  let b = {};
+  try { b = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) {}
+  return kkJson_(kkHandle_(b));
+}
+
+// Goi tu trang app (google.script.run.kkApi) - cung xu ly nhu doPost
+function kkApi(json) {
+  let b = {};
+  try { b = JSON.parse(json || '{}'); } catch (x) {}
+  return JSON.stringify(kkHandle_(b));
+}
+
+function kkHandle_(b) {
   try {
-    const b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const a = b.action;
-    if (a === 'login') return kkJson_(kkLogin_(b));
-    if (a === 'register') return kkJson_(kkRegister_(b));
+    if (a === 'login') return kkLogin_(b);
+    if (a === 'register') return kkRegister_(b);
     const me = kkAuth_(b.token);
-    if (a === 'me') return kkJson_({ ok: true, user: kkPublicUser_(me) });
-    if (a === 'list') return kkJson_(kkList_(me));
-    if (a === 'scan') return kkJson_(kkScan_(me, b));
-    if (a === 'report') return kkJson_(kkReport_(me, b));
-    if (a === 'photo') return kkJson_(kkPhoto_(me, b));
-    if (a === 'changePin') return kkJson_(kkChangePin_(me, b));
-    if (a === 'users') return kkJson_(kkUsers_(me));
-    if (a === 'saveUser') return kkJson_(kkSaveUser_(me, b));
-    return kkJson_({ ok: false, error: 'Thao tác không hợp lệ' });
+    if (a === 'me') return { ok: true, user: kkPublicUser_(me) };
+    if (a === 'list') return kkList_(me);
+    if (a === 'scan') return kkScan_(me, b);
+    if (a === 'report') return kkReport_(me, b);
+    if (a === 'photo') return kkPhoto_(me, b);
+    if (a === 'changePin') return kkChangePin_(me, b);
+    if (a === 'users') return kkUsers_(me);
+    if (a === 'saveUser') return kkSaveUser_(me, b);
+    return { ok: false, error: 'Thao tác không hợp lệ' };
   } catch (err) {
-    return kkJson_({ ok: false, error: String(err && err.message || err), auth: !!(err && err.auth), needSetup: !!(err && err.needSetup) });
+    return { ok: false, error: String(err && err.message || err), auth: !!(err && err.auth), needSetup: !!(err && err.needSetup) };
   }
 }
 

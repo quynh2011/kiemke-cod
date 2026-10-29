@@ -1,0 +1,7 @@
+{
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "Permissions-Policy", "value": "camera=(self)" },
+      { "key": "Cache-Control", "value": "no-cache" } ] }
+  ]
+}

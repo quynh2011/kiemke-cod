@@ -214,7 +214,7 @@ async function api(action, data) {
   const res = await fetch(API, { method: 'POST', redirect: 'follow',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
   const j = await res.json();
-  if (!j.ok) { const e = new Error(j.error || 'Lỗi máy chủ'); e.auth = !!j.auth; throw e; }
+  if (!j.ok) { const e = new Error(j.error || 'Lỗi máy chủ'); e.auth = !!j.auth; e.needSetup = !!j.needSetup; throw e; }
   return j;
 }
 
@@ -227,6 +227,12 @@ const Demo = (function () {
     '4000001': { ma: '4000001', ten: 'AM Thái Nguyên', role: 'AM', pin: '1111', hubs: ['22524000', '20507000'] }
   };
   const hubs = [{ code: '22524000', name: '(THN) Phan Đình Phùng' }, { code: '20507000', name: '(THN) Đồng Hỷ' }];
+  // Nhan su mau (giong sheet Nhansu): tu tao PIN bang ngay vao lam
+  const nhansu = {
+    '3144848': { ten: 'Nguyễn Văn Thế', start: '2024-03-15', active: true, chucvu: 'Business Development Field Executive' },
+    '3192412': { ten: 'Ngô Văn Hải', start: '2026-10-28', active: true, chucvu: 'Business Development Field Executive' },
+    '3100001': { ten: 'NV Đã Nghỉ', start: '2025-01-02', active: false }
+  };
   const mk = (hub, order, cod, dId, dName, phone, trip, status, att, goods) => ({ hub, hubName: (hubs.find(h => h.code === hub) || {}).name,
     order, cod, driverId: dId, driverName: dName, driverPhone: phone, trip, status, attempts: att, goods, ward: '' });
   const orders = [
@@ -246,8 +252,21 @@ const Demo = (function () {
   return {
     async call(b) {
       await new Promise(r => setTimeout(r, 250));
+      if (b.action === 'register') {
+        const ns = nhansu[b.ma];
+        if (!ns) throw new Error('Mã NV không có trong danh sách nhân sự');
+        if (!ns.active) throw new Error('Mã NV ' + b.ma + ' đã nghỉ việc - không được dùng app');
+        if (users[b.ma] && users[b.ma].pin) throw new Error('Mã NV này đã có PIN. Quên PIN thì nhờ quản lý bấm "Đặt lại PIN".');
+        if (b.ngayVao !== ns.start) throw new Error('Ngày vào làm không khớp hồ sơ nhân sự');
+        users[b.ma] = Object.assign(users[b.ma] || { ma: b.ma, ten: ns.ten, role: 'NV', hubs: [] }, { pin: b.pin });
+        b.action = 'login';
+      }
       if (b.action === 'login') {
+        const ns = nhansu[b.ma];
+        if (ns && !ns.active) throw new Error('Mã NV ' + b.ma + ' đã nghỉ việc - không được dùng app');
         const u = users[b.ma];
+        if (!u && ns) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
+        if (u && !u.pin) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
         if (!u || u.pin !== b.pin) throw new Error('Sai mã NV hoặc PIN');
         return { ok: true, token: 'demo-' + u.ma, user: pub(u) };
       }
@@ -297,17 +316,19 @@ const Demo = (function () {
       }
       if (b.action === 'users') {
         if (u.role !== 'QUAN_LY') throw new Error('Chỉ quản lý được quản trị tài khoản');
-        return { ok: true, roles: [['NV', 'Nhân viên giao'], ['BUU_CUC', 'Nhân viên bưu cục'], ['AM', 'AM'], ['QUAN_LY', 'Quản lý']].map(x => ({ code: x[0], name: x[1] })),
+        return { ok: true, roles: [['TU_DONG', 'Tự động theo chức vụ (Nhansu)'], ['NV', 'Nhân viên giao'], ['BUU_CUC', 'Nhân viên bưu cục'], ['AM', 'AM'], ['QUAN_LY', 'Quản lý']].map(x => ({ code: x[0], name: x[1] })),
           hubs: hubs.map(h => Object.assign({ amId: '4000001', amName: 'AM Thái Nguyên' }, h)),
-          users: Object.values(users).map(x => ({ ma: x.ma, ten: x.ten, role: x.role, hubs: x.hubs, status: x.status || 'Hoạt động' })) };
+          users: Object.values(users).map(x => ({ ma: x.ma, ten: x.ten, role: x.role, effRoleVN: pub(x).roleVN, hubs: x.hubs, status: x.status || 'Hoạt động',
+            hasPin: !!x.pin, chucvu: (nhansu[x.ma] && nhansu[x.ma].chucvu) || '', nsStatus: nhansu[x.ma] ? (nhansu[x.ma].active ? 'Đang làm việc' : 'Đã nghỉ') : 'Không có trong Nhansu' })) };
       }
       if (b.action === 'saveUser') {
         if (u.role !== 'QUAN_LY') throw new Error('Chỉ quản lý');
         if (!/^\d{3,10}$/.test(b.ma)) throw new Error('Mã NV phải là số');
         if (b.role === 'BUU_CUC' && !(b.hubs || []).length) throw new Error('Nhân viên bưu cục phải chọn ít nhất 1 bưu cục');
         const old = users[b.ma];
-        if (!old && !b.pin) throw new Error('Tài khoản mới phải đặt PIN');
-        users[b.ma] = { ma: b.ma, ten: b.ten, role: b.role, hubs: b.hubs || [], pin: b.pin || old.pin, status: b.status };
+        if (!old && !b.pin && !nhansu[b.ma]) throw new Error('Mã NV không có trong Nhansu nên phải đặt PIN');
+        users[b.ma] = { ma: b.ma, ten: b.ten, role: b.role === 'TU_DONG' ? 'NV' : b.role, hubs: b.hubs || [],
+          pin: b.resetPin ? '' : (b.pin || (old && old.pin) || ''), status: b.status };
         return { ok: true, created: !old };
       }
       if (b.action === 'changePin') { if (u.pin !== b.oldPin) throw new Error('PIN cũ không đúng'); u.pin = b.pin; return { ok: true }; }
@@ -356,13 +377,16 @@ function viewLogin(msg) {
     <h1>Kiểm kê COD</h1><p>Đăng nhập bằng mã nhân viên</p>
     ${DEMO ? `<div class="demo"><b>Chế độ thử (demo)</b> — dữ liệu mẫu, không ghi Google Sheet.<br>
       Quản lý: <b>3172684</b> / PIN <b>123456</b> · Bưu cục: <b>2000001</b> / <b>1111</b> · NV giao: <b>3179060</b> / <b>1111</b> · AM: <b>4000001</b> / <b>1111</b><br>
-      Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4</div>` : ''}
+      Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4<br>
+      Thử tạo PIN lần đầu: mã <b>3192412</b>, ngày vào làm <b>28/10/2026</b></div>` : ''}
     <form id="fLogin" autocomplete="on">
       <div class="field"><label for="lMa">Mã nhân viên</label><input id="lMa" inputmode="numeric" autocomplete="username" value="${esc(store.get('lastMa', ''))}" required></div>
       <div class="field"><label for="lPin">Mã PIN</label><input id="lPin" type="password" inputmode="numeric" autocomplete="current-password" required></div>
       <div class="err" id="lErr">${esc(msg || '')}</div>
       <button class="btn primary block" id="lBtn">Đăng nhập</button>
-    </form></div></div>`;
+    </form>
+    <button class="btn light block" id="lReg" style="margin-top:10px">Lần đầu dùng app? Tạo mã PIN</button></div></div>`;
+  $('#lReg').onclick = () => viewRegister($('#lMa').value.trim());
   $('#fLogin').onsubmit = async e => {
     e.preventDefault();
     const ma = $('#lMa').value.trim(), pin = $('#lPin').value.trim();
@@ -371,7 +395,38 @@ function viewLogin(msg) {
       const r = await api('login', { ma, pin });
       S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', ma);
       S.tab = 'scan'; shell(); loadList(); flush();
-    } catch (err) { $('#lErr').textContent = err.message; $('#lBtn').disabled = false; }
+    } catch (err) {
+      if (err.needSetup) { viewRegister(ma, err.message); return; }
+      $('#lErr').textContent = err.message; $('#lBtn').disabled = false;
+    }
+  };
+}
+// Nhan vien tu tao PIN: xac minh bang ngay vao lam (sheet Nhansu)
+function viewRegister(ma, msg) {
+  $('#app').innerHTML = `<div class="login"><div class="card">
+    <h1>Tạo mã PIN</h1><p>Dành cho nhân viên dùng app lần đầu, hoặc đã được quản lý đặt lại PIN.</p>
+    <form id="fReg" autocomplete="off">
+      <div class="field"><label for="rMa">Mã nhân viên</label><input id="rMa" inputmode="numeric" value="${esc(ma || '')}" required></div>
+      <div class="field"><label for="rNgay">Ngày vào làm</label><input id="rNgay" type="date" required>
+        <div class="hint">Đúng ngày vào làm trong hồ sơ nhân sự, dùng để xác minh là chính bạn.</div></div>
+      <div class="field"><label for="rPin">Mã PIN mới (4-8 số)</label><input id="rPin" type="password" inputmode="numeric" autocomplete="new-password" required></div>
+      <div class="field"><label for="rPin2">Nhập lại PIN</label><input id="rPin2" type="password" inputmode="numeric" autocomplete="new-password" required></div>
+      <div class="err" id="rErr">${esc(msg && !/chưa tạo mã PIN/.test(msg) ? msg : '')}</div>
+      <button class="btn primary block" id="rBtn">Tạo PIN và đăng nhập</button>
+    </form>
+    <button class="btn light block" id="rBack" style="margin-top:10px">Quay lại đăng nhập</button></div></div>`;
+  $('#rBack').onclick = () => viewLogin();
+  $('#fReg').onsubmit = async e => {
+    e.preventDefault();
+    const m = $('#rMa').value.trim(), pin = $('#rPin').value.trim();
+    if (!/^\d{4,8}$/.test(pin)) { $('#rErr').textContent = 'PIN gồm 4-8 chữ số'; return; }
+    if (pin !== $('#rPin2').value.trim()) { $('#rErr').textContent = 'Hai lần nhập PIN không giống nhau'; return; }
+    $('#rBtn').disabled = true; $('#rErr').textContent = 'Đang xác minh…';
+    try {
+      const r = await api('register', { ma: m, ngayVao: $('#rNgay').value, pin });
+      S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', m);
+      S.tab = 'scan'; shell(); loadList(); flush(); toast('Đã tạo PIN. Chào ' + r.user.ten);
+    } catch (err) { $('#rErr').textContent = err.message; $('#rBtn').disabled = false; }
   };
 }
 function logout() { stopScan(); S.token = ''; S.user = null; S.data = null; store.del('token'); store.del('user'); viewLogin(); }
@@ -807,20 +862,26 @@ function renderAdmin(q) {
   const us = a.users.filter(u => !q || (u.ma + ' ' + u.ten + ' ' + u.hubs.join(' ')).toUpperCase().indexOf(q) >= 0);
   $('#view').innerHTML = `<div class="row" style="margin-bottom:10px"><input class="inp" id="aQ" placeholder="Tìm mã NV, tên, bưu cục…" value="${esc(q)}">
       <button class="btn primary" id="aNew" style="flex:none">+ Thêm</button></div>
-    <div class="card" style="font-size:13px;color:var(--ink-2)"><b style="color:var(--ink)">Phân quyền xem đơn cần kiểm</b><br>
+    <div class="card" style="font-size:13px;color:var(--ink-2)"><b style="color:var(--ink)">Tài khoản nhân viên</b><br>
+      Nhân viên có trong sheet <b>Nhansu</b> tự tạo PIN (xác minh bằng ngày vào làm). Ai nghỉ việc bị chặn đăng nhập tự động.<br>
+      Quyền tự động theo <b>Chức vụ</b>: Business Development Field Executive → đơn của chính NV · Operations Executive → đơn của bưu cục mình · Area Manager / Acting Area Manager → các bưu cục trong khu vực AM quản lý.
+      Chỉ cần sửa ở đây khi muốn cấp quyền khác (ví dụ Quản lý xem toàn bộ).<br><br>
+      <b style="color:var(--ink)">Phân quyền xem đơn cần kiểm</b><br>
       · <b>Nhân viên giao</b>: chỉ đơn có Mã NV giao = mã của mình<br>· <b>Nhân viên bưu cục</b>: đơn của các bưu cục được chọn<br>
-      · <b>AM</b>: tự động mọi bưu cục có ID AM = mã của mình (sheet Cauhinh) + bưu cục chọn thêm<br>· <b>Quản lý</b>: tất cả, xem báo cáo, quản trị tài khoản</div>
+      · <b>AM</b>: bưu cục của mình + các bưu cục có nhân viên ghi AM = tên mình (Nhansu) + bưu cục có ID AM = mã mình (Cauhinh)<br>· <b>Quản lý</b>: tất cả, xem báo cáo, quản trị tài khoản</div>
     <div class="h2">Tài khoản<small>${us.length}</small></div>
     ${us.map(u => `<div class="order ${u.status === 'Khoá' ? 'miss' : 'ok'}" data-u="${esc(u.ma)}" style="cursor:pointer"><div class="body">
-      <div class="o1"><span class="ocode">${esc(u.ten)}</span><span class="tag">${esc(rn[u.role] || u.role)}</span></div>
-      <div class="sub">Mã NV ${esc(u.ma)}${u.hubs.length ? ' · BC ' + esc(u.hubs.join(', ')) : ''}</div>
-      ${u.status === 'Khoá' ? '<span class="tag miss">Đã khoá</span>' : ''}</div></div>`).join('')}`;
+      <div class="o1"><span class="ocode">${esc(u.ten)}</span><span class="tag">${esc(u.effRoleVN || rn[u.role] || u.role)}${u.role === 'TU_DONG' ? ' · tự động' : ''}</span></div>
+      <div class="sub">Mã NV ${esc(u.ma)}${u.chucvu ? ' · ' + esc(u.chucvu) : ''}${u.hubs.length ? ' · BC ' + esc(u.hubs.join(', ')) : ''}</div>
+      <div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">${u.status === 'Khoá' ? '<span class="tag miss">Đã khoá</span>' : ''}
+        <span class="tag ${u.hasPin ? 'ok' : 'dup'}">${u.hasPin ? 'Đã có PIN' : 'Chưa tạo PIN'}</span>
+        ${u.nsStatus ? `<span class="tag ${u.nsStatus === 'Đang làm việc' ? '' : 'miss'}">${esc(u.nsStatus)}</span>` : ''}</div></div></div>`).join('')}`;
   $('#aQ').oninput = e => { const v = e.target.value; renderAdmin(v); const i = $('#aQ'); i.focus(); i.setSelectionRange(v.length, v.length); };
   $('#aNew').onclick = () => userForm(null);
   document.querySelectorAll('[data-u]').forEach(el => el.onclick = () => userForm(a.users.find(u => u.ma === el.dataset.u)));
 }
 function userForm(u) {
-  const a = S.admin, isNew = !u; u = u || { ma: '', ten: '', role: 'NV', hubs: [], status: 'Hoạt động' };
+  const a = S.admin, isNew = !u; u = u || { ma: '', ten: '', role: 'TU_DONG', hubs: [], status: 'Hoạt động' };
   const bg = document.createElement('div'); bg.className = 'sheet-bg';
   bg.innerHTML = `<form class="sheet" id="uf"><h3>${isNew ? 'Thêm tài khoản' : 'Sửa tài khoản'}</h3>
     <div class="field"><label>Mã nhân viên</label><input id="uMa" inputmode="numeric" value="${esc(u.ma)}" ${isNew ? '' : 'readonly'} required></div>
@@ -830,7 +891,9 @@ function userForm(u) {
     <div class="field" id="uHubBox"><label>Bưu cục được xem</label><input class="inp" id="uHubQ" placeholder="Lọc bưu cục…" style="margin-bottom:6px">
       <div class="hubpick" id="uHubs">${a.hubs.map(h => `<label data-h="${esc((h.code + ' ' + (h.name || '')).toUpperCase())}"><input type="checkbox" value="${esc(h.code)}" ${u.hubs.indexOf(h.code) >= 0 ? 'checked' : ''}>
         <span>${esc(h.code)} ${esc(h.name || '')}${h.amName ? ` <span class="k" style="color:var(--ink-3)">· AM: ${esc(String(h.amName).replace(/^AM\s+/i, ''))}</span>` : ''}</span></label>`).join('')}</div></div>
-    <div class="field"><label>${isNew ? 'Mã PIN (4-8 số)' : 'Đặt lại PIN (bỏ trống nếu giữ nguyên)'}</label><input id="uPin" inputmode="numeric" type="password" ${isNew ? 'required' : ''}></div>
+    <div class="field"><label>${isNew ? 'Mã PIN (bỏ trống để nhân viên tự tạo)' : 'Đặt PIN mới (bỏ trống nếu giữ nguyên)'}</label><input id="uPin" inputmode="numeric" type="password">
+      <div class="hint">Người có trong sheet Nhansu có thể tự tạo PIN bằng ngày vào làm.</div>
+      ${!isNew && u.hasPin ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="uReset" style="width:20px;height:20px"> Đặt lại PIN — nhân viên tự tạo PIN mới khi đăng nhập</label>' : ''}</div>
     <div class="field"><label>Trạng thái</label><div class="seg"><button type="button" data-s="Hoạt động">Hoạt động</button><button type="button" data-s="Khoá">Khoá</button></div></div>
     <div class="err" id="uErr"></div>
     <div class="row"><button type="button" class="btn light" id="uCancel" style="flex:1">Huỷ</button><button class="btn primary" style="flex:2" id="uSave">Lưu</button></div></form>`;
@@ -839,21 +902,23 @@ function userForm(u) {
   const segs = bg.querySelectorAll('[data-s]');
   const setS = s => { status = s; segs.forEach(b => b.classList.toggle('on', b.dataset.s === s)); }; setS(status);
   segs.forEach(b => b.onclick = () => setS(b.dataset.s));
-  const hint = { NV: 'Chỉ thấy đơn có Mã NV giao = mã này. Không cần chọn bưu cục.', BUU_CUC: 'Bắt buộc chọn bưu cục.',
+  const hint = { TU_DONG: 'Theo Chức vụ trong Nhansu: Business Development Field Executive → NV giao (đơn của mình); Operations Executive → NV bưu cục (đơn bưu cục mình); Area Manager / Acting Area Manager → AM (các bưu cục trong khu vực mình quản lý).',
+    NV: 'Chỉ thấy đơn có Mã NV giao = mã này.', BUU_CUC: 'Bắt buộc chọn bưu cục.',
     AM: 'Tự thấy bưu cục có ID AM = mã này trong sheet Cauhinh. Có thể chọn thêm.', QUAN_LY: 'Thấy tất cả bưu cục, xem báo cáo, quản trị tài khoản.' };
   const upd = () => { const r = bg.querySelector('#uRole').value; bg.querySelector('#uRoleHint').textContent = hint[r];
-    bg.querySelector('#uHubBox').hidden = r === 'NV' || r === 'QUAN_LY'; };
+    bg.querySelector('#uHubBox').hidden = r === 'NV' || r === 'QUAN_LY' || r === 'TU_DONG'; };
   bg.querySelector('#uRole').onchange = upd; upd();
   bg.querySelector('#uHubQ').oninput = e => { const q = e.target.value.toUpperCase(); bg.querySelectorAll('#uHubs label').forEach(l => { l.hidden = q && l.dataset.h.indexOf(q) < 0; }); };
   bg.querySelector('#uCancel').onclick = () => bg.remove();
   bg.querySelector('#uf').onsubmit = async e => {
     e.preventDefault();
     const role = bg.querySelector('#uRole').value;
-    const hubs = role === 'NV' || role === 'QUAN_LY' ? [] : Array.from(bg.querySelectorAll('#uHubs input:checked')).map(i => i.value);
+    const hubs = role === 'NV' || role === 'QUAN_LY' || role === 'TU_DONG' ? [] : Array.from(bg.querySelectorAll('#uHubs input:checked')).map(i => i.value);
+    const reset = bg.querySelector('#uReset');
     bg.querySelector('#uSave').disabled = true; bg.querySelector('#uErr').textContent = 'Đang lưu…';
     try {
       const r = await api('saveUser', { ma: bg.querySelector('#uMa').value.trim(), ten: bg.querySelector('#uTen').value.trim(), role, hubs,
-        pin: bg.querySelector('#uPin').value.trim(), status });
+        pin: bg.querySelector('#uPin').value.trim(), status, resetPin: !!(reset && reset.checked) });
       bg.remove(); toast(r.created ? 'Đã tạo tài khoản' : 'Đã cập nhật'); viewAdmin();
     } catch (err) { bg.querySelector('#uErr').textContent = err.message; bg.querySelector('#uSave').disabled = false; }
   };

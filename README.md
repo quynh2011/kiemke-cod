@@ -54,13 +54,27 @@ Commit lên nhánh `main`. Trang tự cập nhật sau khoảng 1 phút.
 
 Mỗi lần sửa `KiemKe.gs`: **Deploy → Manage deployments → Edit → Version: New version** (URL giữ nguyên).
 
+## Tài khoản nhân viên (sheet Nhansu)
+
+- Nhân viên **tự tạo PIN** ở màn đăng nhập ("Lần đầu dùng app? Tạo mã PIN"), xác minh bằng **Ngày vào làm**.
+- Ai có Trạng thái khác "Đang làm việc" hoặc có Ngày nghỉ việc → **bị chặn đăng nhập ngay**, kể cả đang đăng nhập dở.
+- Quyền tự động theo **Chức vụ**:
+
+| Chức vụ | Vai trò | Thấy đơn |
+|---|---|---|
+| Business Development Field Executive | NV giao | Đơn của chính mình |
+| Operations Executive | NV bưu cục | Đơn của bưu cục mình (cột Bưu cục) |
+| Area Manager / Acting Area Manager | AM | Các bưu cục trong khu vực mình quản lý |
+
+Quên PIN: quản lý vào tab Quản trị → chọn người → tick "Đặt lại PIN".
+
 ## Phân quyền (sheet KK_NguoiDung / tab Quản trị)
 
 | Vai trò | Thấy đơn cần kiểm | Báo cáo + ảnh | Quản trị |
 |---|---|---|---|
 | Nhân viên giao (`NV`) | Đơn có **Mã NV giao = mã của mình** | – | – |
 | Nhân viên bưu cục (`BUU_CUC`) | Đơn của **bưu cục được chọn** | Trong bưu cục | – |
-| AM (`AM`) | Mọi bưu cục có **ID AM = mã mình** (sheet Cauhinh) + bưu cục chọn thêm | Trong phạm vi | – |
+| AM (`AM`) | Bưu cục của mình + bưu cục có NV ghi **AM = tên mình** (Nhansu) + **ID AM = mã mình** (Cauhinh) | Trong phạm vi | – |
 | Quản lý (`QUAN_LY`) | Tất cả | Tất cả | Có |
 
 Quét đơn **không thuộc phạm vi** thì app báo "Ngoài danh sách". Lần quét đó vẫn được ghi kèm ảnh, kèm bưu cục và NV giao thật của đơn, để quản lý đối chiếu.

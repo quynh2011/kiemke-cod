@@ -30,6 +30,9 @@
 const KK_SRC_DATA = 'Data';
 const KK_SRC_CAUHINH = 'Cauhinh';
 const KK_SRC_MAIN = 'Main';
+// Danh sach nhan su (IMPORTRANGE) - dung de: tu dang ky PIN, chan nguoi nghi viec, lay ho ten
+const KK_SRC_NHANSU = 'Nhansu';
+const KK_NHANSU_ACTIVE = 'Đang làm việc';   // gia tri cot "Trạng thái" cua nguoi dang lam
 
 const KK_SH_USERS = 'KK_NguoiDung';
 const KK_SH_LIST = 'KK_DanhSach';
@@ -41,6 +44,8 @@ const KK_PHOTO_ROOT = 'KiemKe_AnhDonHang';
 const KK_ADMIN = { ma: '3172684', ten: 'Phạm Văn Quỳnh' };
 
 const KK_ROLES = ['NV', 'BUU_CUC', 'AM', 'QUAN_LY'];
+// Vai tro luu trong sheet: '' / TU_DONG = tu xac dinh (AM neu co ID AM trong Cauhinh, con lai NV giao)
+const KK_ROLE_AUTO = 'TU_DONG';
 const KK_ROLE_VN = { NV: 'Nhân viên giao', BUU_CUC: 'Nhân viên bưu cục', AM: 'AM', QUAN_LY: 'Quản lý' };
 const KK_TOKEN_HOURS = 14;
 const KK_MAX_LOGIN_FAIL = 5;
@@ -73,6 +78,7 @@ function doPost(e) {
     const b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const a = b.action;
     if (a === 'login') return kkJson_(kkLogin_(b));
+    if (a === 'register') return kkJson_(kkRegister_(b));
     const me = kkAuth_(b.token);
     if (a === 'me') return kkJson_({ ok: true, user: kkPublicUser_(me) });
     if (a === 'list') return kkJson_(kkList_(me));
@@ -84,7 +90,7 @@ function doPost(e) {
     if (a === 'saveUser') return kkJson_(kkSaveUser_(me, b));
     return kkJson_({ ok: false, error: 'Thao tác không hợp lệ' });
   } catch (err) {
-    return kkJson_({ ok: false, error: String(err && err.message || err), auth: !!(err && err.auth) });
+    return kkJson_({ ok: false, error: String(err && err.message || err), auth: !!(err && err.auth), needSetup: !!(err && err.needSetup) });
   }
 }
 
@@ -100,11 +106,12 @@ function kkLogin_(b) {
   const fails = Number(cache.get(failKey) || 0);
   if (fails >= KK_MAX_LOGIN_FAIL) throw new Error('Sai PIN quá ' + KK_MAX_LOGIN_FAIL + ' lần. Thử lại sau 15 phút.');
   const u = kkFindUser_(ma);
-  if (!u || u.hash !== kkHash_(ma, pin)) {
+  kkCheckActive_(u, ma);
+  if (!u.hash) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
+  if (u.hash !== kkHash_(ma, pin)) {
     cache.put(failKey, String(fails + 1), 900);
     throw new Error('Sai mã NV hoặc PIN');
   }
-  if (u.status !== 'Hoạt động') throw new Error('Tài khoản đã bị khoá');
   cache.remove(failKey);
   return { ok: true, token: kkSign_({ u: u.ma, exp: Date.now() + KK_TOKEN_HOURS * 3600000 }), user: kkPublicUser_(u) };
 }
@@ -112,7 +119,8 @@ function kkLogin_(b) {
 function kkAuth_(token) {
   const p = kkVerify_(token);
   const u = p && kkFindUser_(p.u);
-  if (!u || u.status !== 'Hoạt động') { const e = new Error('Phiên đăng nhập hết hạn, đăng nhập lại'); e.auth = true; throw e; }
+  if (!u || !u.hash) { const e = new Error('Phiên đăng nhập hết hạn, đăng nhập lại'); e.auth = true; throw e; }
+  try { kkCheckActive_(u, u.ma); } catch (err) { err.auth = true; throw err; }
   return u;
 }
 
@@ -152,9 +160,129 @@ function kkReadUsers_() {
       hubs: kkSplit_(r[U['Bưu cục']]), hash: r[U['PIN (mã hoá)']], status: String(r[U['Trạng thái']]).trim() || 'Hoạt động' };
   }).filter(function (u) { return u.ma; });
 }
+// Tai khoan hieu luc = dong trong KK_NguoiDung (neu co) + thong tin Nhansu + vai tro tu dong
 function kkFindUser_(ma) {
   ma = String(ma || '').trim();
-  return kkReadUsers_().filter(function (u) { return u.ma === ma; })[0] || null;
+  if (!ma) return null;
+  const row = kkReadUsers_().filter(function (u) { return u.ma === ma; })[0] || null;
+  const ns = kkNhansu_(ma);
+  if (!row && !ns) return null;
+  const u = row ? Object.assign({}, row) : { row: 0, ma: ma, ten: '', role: '', hubs: [], hash: '', status: 'Hoạt động' };
+  u.storedRole = u.role;
+  u.ten = u.ten || (ns ? ns.ten : '');
+  u.ns = ns;
+  if (!u.role || u.role === KK_ROLE_AUTO) u.role = kkAutoRole_(ma, ns);
+  return u;
+}
+
+// Vai tro tu dong theo CHUC VU trong sheet Nhansu:
+//   Area Manager / Acting Area Manager -> AM (cac buu cuc trong khu vuc AM quan ly)
+//   Operations Executive               -> BUU_CUC (don can kiem cua buu cuc minh)
+//   Business Development Field Executive -> NV (don cua chinh nhan vien giao)
+// Chuc vu khac: la AM neu ma NV la ID AM trong Cauhinh, con lai NV giao
+const KK_TITLE_ROLE = [
+  ['acting area manager', 'AM'], ['area manager', 'AM'],
+  ['operations executive', 'BUU_CUC'], ['business development field executive', 'NV']
+];
+function kkTitleRole_(chucvu) {
+  const t = String(chucvu || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  for (let i = 0; i < KK_TITLE_ROLE.length; i++) if (t === KK_TITLE_ROLE[i][0]) return KK_TITLE_ROLE[i][1];
+  return '';
+}
+function kkAutoRole_(ma, ns) {
+  if (ns === undefined) ns = kkNhansu_(ma);
+  const byTitle = ns ? kkTitleRole_(ns.chucvu) : '';
+  if (byTitle) return byTitle;
+  const hubs = kkHubs_();
+  return Object.keys(hubs).some(function (c) { return hubs[c].amId === ma; }) ? 'AM' : 'NV';
+}
+
+// Cac buu cuc ma AM (theo ten) quan ly trong sheet Nhansu (cot AM), cache 10 phut
+function kkNsAmHubs_(amName) {
+  const name = String(amName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!name) return [];
+  const cache = CacheService.getScriptCache();
+  const key = 'kkamh_' + Utilities.base64EncodeWebSafe(name).slice(0, 200);
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_NHANSU);
+  const out = {};
+  if (sh && sh.getLastRow() >= 2) {
+    const v = sh.getDataRange().getDisplayValues();
+    const head = v[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    const cAm = head.indexOf('am'), cHub = head.findIndex(function (h) { return h.indexOf('bưu cục') === 0; });
+    if (cAm >= 0 && cHub >= 0) v.slice(1).forEach(function (r) {
+      const hub = String(r[cHub]).split(' - ')[0].trim();
+      if (/^\d+$/.test(hub) && String(r[cAm]).trim().toLowerCase().replace(/\s+/g, ' ') === name) out[hub] = true;
+    });
+  }
+  const list = Object.keys(out);
+  cache.put(key, JSON.stringify(list), 600);
+  return list;
+}
+
+// Chan: tai khoan bi khoa trong KK_NguoiDung, hoac da NGHI VIEC theo sheet Nhansu
+function kkCheckActive_(u, ma) {
+  if (!u) throw new Error('Mã NV ' + ma + ' không có trong danh sách nhân sự');
+  if (u.status === 'Khoá') throw new Error('Tài khoản đã bị khoá');
+  if (u.ns && !u.ns.active) throw new Error('Mã NV ' + ma + ' đã nghỉ việc / không còn làm việc - không được dùng app');
+}
+
+// Tra 1 nhan vien trong sheet Nhansu (tim cot theo tieu de), cache 10 phut
+function kkNhansu_(ma) {
+  const cache = CacheService.getScriptCache();
+  const key = 'kkns_' + ma;
+  const hit = cache.get(key);
+  if (hit) return hit === '-' ? null : JSON.parse(hit);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_NHANSU);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const width = sh.getLastColumn();
+  const head = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const col = function (prefix) { for (let i = 0; i < head.length; i++) if (head[i].indexOf(prefix) === 0) return i; return -1; };
+  const cId = Math.max(0, col('id'));
+  const cell = sh.getRange(2, cId + 1, sh.getLastRow() - 1, 1).createTextFinder(String(ma)).matchEntireCell(true).findNext();
+  if (!cell) { cache.put(key, '-', 600); return null; }
+  const r = sh.getRange(cell.getRow(), 1, 1, width).getDisplayValues()[0];
+  const g = function (prefix) { const i = col(prefix); return i >= 0 ? String(r[i]).trim() : ''; };
+  const quit = g('ngày nghỉ');
+  const status = g('trạng thái');
+  const ns = {
+    ma: String(ma), ten: g('tên'), chucvu: g('chức vụ'), start: kkDayStr_(g('ngày vào')),
+    quit: /^(null|-)?$/i.test(quit) ? '' : quit, status: status, hub: g('bưu cục').split(' - ')[0].trim(), am: g('am')
+  };
+  ns.active = status === KK_NHANSU_ACTIVE && !ns.quit;
+  cache.put(key, JSON.stringify(ns), 600);
+  return ns;
+}
+
+// Nhan vien TU TAO PIN lan dau (hoac sau khi quan ly dat lai PIN): xac minh bang ngay vao lam trong Nhansu
+function kkRegister_(b) {
+  const ma = String(b.ma || '').trim(), pin = String(b.pin || '').trim();
+  if (!/^\d{3,10}$/.test(ma)) throw new Error('Nhập mã nhân viên (chỉ gồm số)');
+  if (!/^\d{4,8}$/.test(pin)) throw new Error('PIN gồm 4-8 chữ số');
+  const cache = CacheService.getScriptCache();
+  const failKey = 'kkreg_' + ma;
+  const fails = Number(cache.get(failKey) || 0);
+  if (fails >= KK_MAX_LOGIN_FAIL) throw new Error('Nhập sai quá ' + KK_MAX_LOGIN_FAIL + ' lần. Thử lại sau 30 phút hoặc nhờ quản lý.');
+  const u = kkFindUser_(ma);
+  kkCheckActive_(u, ma);
+  if (u.hash) throw new Error('Mã NV này đã có PIN. Quên PIN thì nhờ quản lý bấm "Đặt lại PIN".');
+  if (!u.ns) throw new Error('Mã NV không có trong sheet Nhansu - nhờ quản lý tạo tài khoản');
+  if (!u.ns.start || kkDayStr_(b.ngayVao) !== u.ns.start) {
+    cache.put(failKey, String(fails + 1), 1800);
+    throw new Error('Ngày vào làm không khớp hồ sơ nhân sự');
+  }
+  cache.remove(failKey);
+  const lock = kkLock_();
+  lock.waitLock(20000);
+  try {
+    const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
+    const at = u.row || sh.getLastRow() + 1;
+    const rec = [ma, u.ten, u.storedRole || KK_ROLE_AUTO, (u.hubs || []).join(', '), kkHash_(ma, pin), 'Hoạt động', new Date(), 'Tự đăng ký'];
+    sh.getRange(at, 1).setNumberFormat('@');
+    sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([rec]);
+  } finally { lock.releaseLock(); }
+  return kkLogin_({ ma: ma, pin: pin });
 }
 function kkPublicUser_(u) {
   const sc = kkScope_(u);
@@ -188,9 +316,12 @@ function kkScope_(u) {
   if (u.role === 'QUAN_LY') return { all: true, hubs: {}, driver: '' };
   const hubs = {};
   u.hubs.forEach(function (h) { hubs[h] = true; });
+  // Buu cuc cua chinh nhan vien trong Nhansu (Operations Executive / AM)
+  if ((u.role === 'BUU_CUC' || u.role === 'AM') && u.ns && /^\d+$/.test(u.ns.hub)) hubs[u.ns.hub] = true;
   if (u.role === 'AM') {
     const all = kkHubs_();
     Object.keys(all).forEach(function (c) { if (all[c].amId === u.ma) hubs[c] = true; });
+    kkNsAmHubs_(u.ten).forEach(function (h) { hubs[h] = true; });
   }
   if (u.role === 'NV') return { all: false, hubs: {}, driver: u.ma };
   return { all: false, hubs: hubs, driver: '' };
@@ -506,9 +637,15 @@ function KKTongHopNgay() {
 function kkUsers_(me) {
   if (me.role !== 'QUAN_LY') throw new Error('Chỉ quản lý được quản trị tài khoản');
   const hubs = kkHubs_();
-  return { ok: true, roles: KK_ROLES.map(function (r) { return { code: r, name: KK_ROLE_VN[r] }; }),
+  return { ok: true, roles: [{ code: KK_ROLE_AUTO, name: 'Tự động theo chức vụ (Nhansu)' }]
+      .concat(KK_ROLES.map(function (r) { return { code: r, name: KK_ROLE_VN[r] }; })),
     hubs: Object.keys(hubs).map(function (h) { return { code: h, name: hubs[h].name, amId: hubs[h].amId, amName: hubs[h].amName }; }),
-    users: kkReadUsers_().map(function (u) { return { ma: u.ma, ten: u.ten, role: u.role, hubs: u.hubs, status: u.status }; }) };
+    users: kkReadUsers_().map(function (u) {
+      const ns = kkNhansu_(u.ma);
+      const eff = !u.role || u.role === KK_ROLE_AUTO ? kkAutoRole_(u.ma, ns) : u.role;
+      return { ma: u.ma, ten: u.ten || (ns ? ns.ten : ''), role: u.role || KK_ROLE_AUTO, effRole: eff, effRoleVN: KK_ROLE_VN[eff],
+        hubs: u.hubs, status: u.status, hasPin: !!u.hash, chucvu: ns ? ns.chucvu : '', nsStatus: ns ? (ns.active ? 'Đang làm việc' : 'Đã nghỉ / ' + (ns.status || '')) : 'Không có trong Nhansu' };
+    }) };
 }
 
 function kkSaveUser_(me, b) {
@@ -516,7 +653,7 @@ function kkSaveUser_(me, b) {
   const ma = String(b.ma || '').trim(), ten = String(b.ten || '').trim(), role = String(b.role || '').trim().toUpperCase();
   if (!/^\d{3,10}$/.test(ma)) throw new Error('Mã NV phải là số');
   if (!ten) throw new Error('Nhập họ tên');
-  if (KK_ROLES.indexOf(role) < 0) throw new Error('Vai trò không hợp lệ');
+  if (KK_ROLES.indexOf(role) < 0 && role !== KK_ROLE_AUTO) throw new Error('Vai trò không hợp lệ');
   const hubs = kkSplit_(b.hubs);
   if (role === 'BUU_CUC' && !hubs.length) throw new Error('Nhân viên bưu cục phải chọn ít nhất 1 bưu cục');
   const status = b.status === 'Khoá' ? 'Khoá' : 'Hoạt động';
@@ -528,10 +665,13 @@ function kkSaveUser_(me, b) {
   lock.waitLock(20000);
   try {
     const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
-    const old = kkFindUser_(ma);
-    if (!old && !pin) throw new Error('Tài khoản mới phải đặt PIN');
-    const row = [ma, ten, role, hubs.join(', '), pin ? kkHash_(ma, pin) : old.hash, status, new Date(), me.ten];
-    const at = old ? old.row : sh.getLastRow() + 1;
+    const old = kkReadUsers_().filter(function (x) { return x.ma === ma; })[0] || null;
+    const ns = kkNhansu_(ma);
+    // Khong dat PIN: nguoi co trong Nhansu tu tao PIN; nguoi ngoai Nhansu thi bat buoc dat
+    if (!old && !pin && !ns) throw new Error('Mã NV không có trong Nhansu nên phải đặt PIN');
+    const hash = b.resetPin ? '' : pin ? kkHash_(ma, pin) : (old ? old.hash : '');
+    const row = [ma, ten, role, hubs.join(', '), hash, status, new Date(), me.ten];
+    const at = old ? old.row : sh.getLastRow() + 1; // old.row = dong that trong sheet
     sh.getRange(at, 1).setNumberFormat('@');
     sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([row]);
     return { ok: true, created: !old };
@@ -555,7 +695,7 @@ function KKSetup() {
   [[KK_SH_USERS, KK_USER_HEADERS], [KK_SH_LIST, KK_LIST_HEADERS], [KK_SH_RESULT, KK_RESULT_HEADERS], [KK_SH_REPORT, KK_REPORT_HEADERS]]
     .forEach(function (x) { kkSheet_(x[0], x[1]); });
   kkSecret_();
-  if (!kkFindUser_(KK_ADMIN.ma)) {
+  if (!kkReadUsers_().some(function (u) { return u.ma === KK_ADMIN.ma && u.hash; })) {
     const pin = String(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_MAIN).getRange('A3').getDisplayValue()).trim();
     if (!/^\d{4,8}$/.test(pin)) throw new Error('Đặt PIN ban đầu (4-8 chữ số) vào Main!A3 rồi chạy lại KKSetup');
     const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);

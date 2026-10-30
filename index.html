@@ -79,6 +79,29 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 4px; text-align: center;
   cursor: pointer; font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
 .stat:active { transform: scale(.97); } .stat.on { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+.otp { display: block; width: 100%; box-sizing: border-box; height: 54px; padding: 0 10px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); color: var(--ink); font: inherit; font-size: 26px !important; letter-spacing: 10px; text-align: center;
+  font-variant-numeric: tabular-nums; font-weight: 700; margin-bottom: 8px; }
+.otp:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(242,101,34,.18); }
+a.btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
+.steps { display: flex; gap: 6px; margin: 4px 0 16px; }
+.steps div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-3); }
+.steps b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--line); color: var(--ink-2); font-size: 13px; }
+.steps .on b { background: var(--brand); color: #fff; } .steps .on { color: var(--ink); font-weight: 600; }
+.steps .done b { background: var(--ok); color: #fff; }
+.who { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.who span { font-size: 13px; color: var(--ink-2); }
+.selfie { position: relative; width: 100%; max-width: 300px; aspect-ratio: 3 / 4; margin: 0 auto; border-radius: 16px; overflow: hidden; background: #111; }
+.selfie video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.selfie .ring { position: absolute; inset: 9% 14% 16%; border: 3px dashed rgba(255,255,255,.75); border-radius: 50% / 45%; pointer-events: none; }
+.selfie .cd { position: absolute; inset: 0; display: grid; place-items: center; font-size: 72px; font-weight: 800; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); pointer-events: none; }
+.selfie img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #111; }
+.guide { padding-left: 20px; margin: 0 0 10px; font-size: 14px; line-height: 1.5; } .guide li { margin-bottom: 10px; }
+.or { text-align: center; font-size: 12px; color: var(--ink-3); margin: 8px 0 6px; }
+.qr { width: 190px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 4px; } .qr svg { width: 100%; height: auto; display: block; }
+.key { display: flex; gap: 8px; align-items: center; } .key code { flex: 1; font-size: 13.5px; background: var(--bg); padding: 9px 10px; border-radius: 8px; word-break: break-all; letter-spacing: .5px; }
+.key .btn { height: 38px; padding: 0 12px; }
+.selfthumb { width: 96px; height: 64px; border-radius: 8px; background: #111 center/cover no-repeat; flex: none; }
 .hubsel { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .hubsel label { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .hubsel select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
@@ -281,16 +304,34 @@ async function apiRaw(action, data) {
   return j;
 }
 
+// TOTP (RFC 6238) tren trinh duyet - chi dung cho che do demo
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function b32enc(bytes) { let bits = 0, val = 0, out = ''; bytes.forEach(b => { val = (val << 8) | b; bits += 8;
+  while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } }); if (bits > 0) out += B32[(val << (5 - bits)) & 31]; return out; }
+function b32dec(s) { let bits = 0, val = 0; const out = []; s.replace(/[^A-Z2-7]/g, '').split('').forEach(ch => { val = (val << 5) | B32.indexOf(ch); bits += 5;
+  if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } }); return new Uint8Array(out); }
+async function totpAt(secret, counter) {
+  const key = await crypto.subtle.importKey('raw', b32dec(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const msg = new Uint8Array(8); let c = counter; for (let i = 7; i >= 0; i--) { msg[i] = c % 256; c = Math.floor(c / 256); }
+  const h = new Uint8Array(await crypto.subtle.sign('HMAC', key, msg)), o = h[19] & 15;
+  return String((((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1e6).padStart(6, '0');
+}
+async function totpOk(secret, code) { const c = Math.floor(Date.now() / 30000);
+  for (let d = -1; d <= 1; d++) if (await totpAt(secret, c + d) === String(code)) return true; return false; }
+
 // Demo: du lieu mau trong trinh duyet, khong ghi Google Sheet
 const Demo = (function () {
   const users = {
-    '3172684': { ma: '3172684', ten: 'Phạm Văn Quỳnh', role: 'QUAN_LY', pin: '123456', hubs: [] },
-    '2000001': { ma: '2000001', ten: 'NV Bưu cục Phan Đình Phùng', role: 'BUU_CUC', pin: '1111', hubs: ['22524000'] },
-    '3179060': { ma: '3179060', ten: 'Trần Thị Thìn', role: 'NV', pin: '1111', hubs: [] },
-    '4000001': { ma: '4000001', ten: 'AM Thái Nguyên', role: 'AM', pin: '1111', hubs: ['22524000', '20507000'] }
+    '3172684': { ma: '3172684', ten: 'Phạm Văn Quỳnh', role: 'QUAN_LY', hubs: [] },
+    '2000001': { ma: '2000001', ten: 'NV Bưu cục Phan Đình Phùng', role: 'BUU_CUC', hubs: ['22524000'] },
+    '3179060': { ma: '3179060', ten: 'Trần Thị Thìn', role: 'NV', hubs: [] },
+    '4000001': { ma: '4000001', ten: 'AM Thái Nguyên', role: 'AM', hubs: ['22524000', '20507000'] }
   };
+  // Khoa Authenticator demo luu tren trinh duyet de dang nhap lai sau khi tai trang
+  const auth = store.get('demo_auth', {});
+  const enroll = {};
   const hubs = [{ code: '22524000', name: '(THN) Phan Đình Phùng' }, { code: '20507000', name: '(THN) Đồng Hỷ' }];
-  // Nhan su mau (giong sheet Nhansu): tu tao PIN bang ngay vao lam
+  // Nhan su mau (giong sheet Nhansu)
   const nhansu = {
     '3144848': { ten: 'Nguyễn Văn Thế', start: '2024-03-15', active: true, chucvu: 'Business Development Field Executive' },
     '3192412': { ten: 'Ngô Văn Hải', start: '2026-10-28', active: true, chucvu: 'Business Development Field Executive' },
@@ -310,28 +351,39 @@ const Demo = (function () {
   const photos = {};
   const scope = u => u.role === 'QUAN_LY' ? () => true : u.role === 'NV' ? o => o.driverId === u.ma : o => u.hubs.indexOf(o.hub) !== -1;
   const pub = u => ({ ma: u.ma, ten: u.ten, role: u.role, roleVN: { NV: 'Nhân viên giao', BUU_CUC: 'Nhân viên bưu cục', AM: 'AM', QUAN_LY: 'Quản lý' }[u.role],
-    hubs: u.role === 'QUAN_LY' ? [] : u.hubs, all: u.role === 'QUAN_LY', canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY' });
-  const me = t => { const u = users[String(t || '').replace('demo-', '')]; if (!u) { const e = new Error('Phiên đăng nhập hết hạn'); e.auth = true; throw e; } return u; };
+    hubs: u.role === 'QUAN_LY' ? [] : u.hubs, all: u.role === 'QUAN_LY', canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY',
+    authAt: (auth[u.ma] || {}).at || '', selfie: (auth[u.ma] || {}).selfie || '' });
+  const me = t => { const m = String(t || '').replace('demo-', ''), u = users[m];
+    if (!u || !auth[m]) { const e = new Error('Phiên đăng nhập hết hạn'); e.auth = true; throw e; } return u; };
   const nowTxt = () => new Date().toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   return {
     async call(b) {
       await new Promise(r => setTimeout(r, 250));
-      if (b.action === 'register') {
-        const ns = nhansu[b.ma];
-        if (!ns) throw new Error('Mã NV không có trong danh sách nhân sự');
-        if (!ns.active) throw new Error('Mã NV ' + b.ma + ' đã nghỉ việc - không được dùng app');
-        if (users[b.ma] && users[b.ma].pin) throw new Error('Mã NV này đã có PIN. Quên PIN thì nhờ quản lý bấm "Đặt lại PIN".');
-        if (b.ngayVao !== ns.start) throw new Error('Ngày vào làm không khớp hồ sơ nhân sự');
-        users[b.ma] = Object.assign(users[b.ma] || { ma: b.ma, ten: ns.ten, role: 'NV', hubs: [] }, { pin: b.pin });
-        b.action = 'login';
+      const findU = ma => { const ns = nhansu[ma];
+        if (ns && !ns.active) throw new Error('Mã NV ' + ma + ' đã nghỉ việc - không được dùng app');
+        const u = users[ma] || (ns && (users[ma] = { ma, ten: ns.ten, role: 'NV', hubs: [] }));
+        if (!u) throw new Error('Mã NV ' + ma + ' không có trong danh sách nhân sự'); return u; };
+      if (b.action === 'enrollStart') {
+        const u = findU(b.ma);
+        if (auth[b.ma]) throw new Error('Mã NV ' + b.ma + ' đã kích hoạt Authenticator. Đổi máy / mất mã thì nhờ quản lý bấm "Đặt lại Authenticator".');
+        const secret = b32enc(crypto.getRandomValues(new Uint8Array(20))), id = 'e' + Date.now();
+        enroll[id] = { ma: b.ma, secret };
+        return { ok: true, enrollId: id, secret, ma: b.ma, ten: u.ten, chucvu: (nhansu[b.ma] || {}).chucvu || '', hub: (u.hubs || [])[0] || '',
+          uri: 'otpauth://totp/' + encodeURIComponent('Kiem ke COD:' + b.ma + ' ' + u.ten) + '?secret=' + secret + '&issuer=Kiem%20ke%20COD&algorithm=SHA1&digits=6&period=30' };
+      }
+      if (b.action === 'enrollFinish') {
+        const p = enroll[b.enrollId];
+        if (!p || p.ma !== b.ma) throw new Error('Phiên kích hoạt đã hết hạn. Làm lại từ đầu.');
+        if (!b.selfie) throw new Error('Thiếu ảnh xác minh khuôn mặt');
+        if (!(await totpOk(p.secret, b.code))) throw new Error('Mã 6 số chưa đúng. Kiểm tra đã thêm đúng tài khoản vào Authenticator.');
+        const id = 'self' + Date.now(); photos[id] = b.selfie;
+        auth[b.ma] = { secret: p.secret, at: nowTxt(), selfie: id }; store.set('demo_auth', auth); delete enroll[b.enrollId];
+        return { ok: true, token: 'demo-' + b.ma, user: pub(findU(b.ma)) };
       }
       if (b.action === 'login') {
-        const ns = nhansu[b.ma];
-        if (ns && !ns.active) throw new Error('Mã NV ' + b.ma + ' đã nghỉ việc - không được dùng app');
-        const u = users[b.ma];
-        if (!u && ns) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
-        if (u && !u.pin) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
-        if (!u || u.pin !== b.pin) throw new Error('Sai mã NV hoặc PIN');
+        const u = findU(b.ma);
+        if (!auth[b.ma]) { const e = new Error('Mã NV ' + b.ma + ' chưa kích hoạt Authenticator. Bấm "Lần đầu dùng app? Kích hoạt Authenticator".'); e.needSetup = true; throw e; }
+        if (!(await totpOk(auth[b.ma].secret, b.code))) throw new Error('Mã Authenticator không đúng hoặc đã hết hạn. Nhập mã đang hiện trên app.');
         return { ok: true, token: 'demo-' + u.ma, user: pub(u) };
       }
       const u = me(b.token), sc = scope(u);
@@ -386,19 +438,17 @@ const Demo = (function () {
         return { ok: true, roles: [['TU_DONG', 'Tự động theo chức vụ (Nhansu)'], ['NV', 'Nhân viên giao'], ['BUU_CUC', 'Nhân viên bưu cục'], ['AM', 'AM'], ['QUAN_LY', 'Quản lý']].map(x => ({ code: x[0], name: x[1] })),
           hubs: hubs.map(h => Object.assign({ amId: '4000001', amName: 'AM Thái Nguyên' }, h)),
           users: Object.values(users).map(x => ({ ma: x.ma, ten: x.ten, role: x.role, effRoleVN: pub(x).roleVN, hubs: x.hubs, status: x.status || 'Hoạt động',
-            hasPin: !!x.pin, chucvu: (nhansu[x.ma] && nhansu[x.ma].chucvu) || '', nsStatus: nhansu[x.ma] ? (nhansu[x.ma].active ? 'Đang làm việc' : 'Đã nghỉ') : 'Không có trong Nhansu' })) };
+            hasAuth: !!auth[x.ma], authAt: (auth[x.ma] || {}).at || '', selfie: (auth[x.ma] || {}).selfie || '', chucvu: (nhansu[x.ma] && nhansu[x.ma].chucvu) || '', nsStatus: nhansu[x.ma] ? (nhansu[x.ma].active ? 'Đang làm việc' : 'Đã nghỉ') : 'Không có trong Nhansu' })) };
       }
       if (b.action === 'saveUser') {
         if (u.role !== 'QUAN_LY') throw new Error('Chỉ quản lý');
         if (!/^\d{3,10}$/.test(b.ma)) throw new Error('Mã NV phải là số');
         if (b.role === 'BUU_CUC' && !(b.hubs || []).length) throw new Error('Nhân viên bưu cục phải chọn ít nhất 1 bưu cục');
         const old = users[b.ma];
-        if (!old && !b.pin && !nhansu[b.ma]) throw new Error('Mã NV không có trong Nhansu nên phải đặt PIN');
-        users[b.ma] = { ma: b.ma, ten: b.ten, role: b.role === 'TU_DONG' ? 'NV' : b.role, hubs: b.hubs || [],
-          pin: b.resetPin ? '' : (b.pin || (old && old.pin) || ''), status: b.status };
+        users[b.ma] = { ma: b.ma, ten: b.ten, role: b.role === 'TU_DONG' ? 'NV' : b.role, hubs: b.hubs || [], status: b.status };
+        if (b.resetAuth) { delete auth[b.ma]; store.set('demo_auth', auth); }
         return { ok: true, created: !old };
       }
-      if (b.action === 'changePin') { if (u.pin !== b.oldPin) throw new Error('PIN cũ không đúng'); u.pin = b.pin; return { ok: true }; }
       throw new Error('Thao tác không hợp lệ');
     }
   };
@@ -439,62 +489,165 @@ const S = {
 // DANG NHAP
 // =====================================================================
 function viewLogin(msg) {
-  stopScan();
+  stopScan(); stopSelfie();
   $('#app').innerHTML = `<div class="login"><div class="card">
-    <h1>Kiểm kê COD</h1><p>Đăng nhập bằng mã nhân viên</p>
+    <h1>Kiểm kê COD</h1><p>Đăng nhập bằng mã nhân viên và mã 6 số trên ứng dụng Authenticator</p>
     ${DEMO ? `<div class="demo"><b>Chế độ thử (demo)</b> — dữ liệu mẫu, không ghi Google Sheet.<br>
-      Quản lý: <b>3172684</b> / PIN <b>123456</b> · Bưu cục: <b>2000001</b> / <b>1111</b> · NV giao: <b>3179060</b> / <b>1111</b> · AM: <b>4000001</b> / <b>1111</b><br>
-      Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4<br>
-      Thử tạo PIN lần đầu: mã <b>3192412</b>, ngày vào làm <b>28/10/2026</b></div>` : ''}
+      Tài khoản: Quản lý <b>3172684</b> · Bưu cục <b>2000001</b> · NV giao <b>3179060</b> · AM <b>4000001</b>. Lần đầu bấm <b>Kích hoạt Authenticator</b>.<br>
+      Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4</div>` : ''}
     <form id="fLogin" autocomplete="on">
       <div class="field"><label for="lMa">Mã nhân viên</label><input id="lMa" inputmode="numeric" autocomplete="username" value="${esc(store.get('lastMa', ''))}" required></div>
-      <div class="field"><label for="lPin">Mã PIN</label><input id="lPin" type="password" inputmode="numeric" autocomplete="current-password" required></div>
+      <div class="field"><label for="lPin">Mã 6 số trên Authenticator</label>
+        <input id="lPin" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\\d{6}" placeholder="••••••" required>
+        <div class="hint">Mở app Google Authenticator / Microsoft Authenticator, mục <b>Kiem ke COD</b>. Mã đổi mỗi 30 giây.</div></div>
       <div class="err" id="lErr">${esc(msg || '')}</div>
       <button class="btn primary block" id="lBtn">Đăng nhập</button>
     </form>
-    <button class="btn light block" id="lReg" style="margin-top:10px">Lần đầu dùng app? Tạo mã PIN</button></div></div>`;
-  $('#lReg').onclick = () => viewRegister($('#lMa').value.trim());
+    <button class="btn light block" id="lReg" style="margin-top:10px">Lần đầu dùng app? Kích hoạt Authenticator</button></div></div>`;
+  $('#lReg').onclick = () => viewEnroll($('#lMa').value.trim());
+  $('#lPin').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6 && $('#lMa').value.trim()) $('#fLogin').requestSubmit(); };
+  if (store.get('lastMa', '')) setTimeout(() => $('#lPin') && $('#lPin').focus(), 50);
   $('#fLogin').onsubmit = async e => {
     e.preventDefault();
-    const ma = $('#lMa').value.trim(), pin = $('#lPin').value.trim();
+    const ma = $('#lMa').value.trim(), code = $('#lPin').value.trim();
+    if (!/^\d{6}$/.test(code)) { $('#lErr').textContent = 'Nhập đủ 6 số đang hiện trên Authenticator'; return; }
     $('#lBtn').disabled = true; $('#lErr').textContent = 'Đang đăng nhập…';
     try {
-      const r = await api('login', { ma, pin });
-      S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', ma);
-      S.tab = 'scan'; shell(); loadList(); flush();
+      const r = await api('login', { ma, code });
+      loggedIn(r, ma);
     } catch (err) {
-      if (err.needSetup) { viewRegister(ma, err.message); return; }
-      $('#lErr').textContent = err.message; $('#lBtn').disabled = false;
+      if (err.needSetup) { viewEnroll(ma, err.message); return; }
+      $('#lErr').textContent = err.message; $('#lBtn').disabled = false; $('#lPin').value = ''; $('#lPin').focus();
     }
   };
 }
-// Nhan vien tu tao PIN: xac minh bang ngay vao lam (sheet Nhansu)
-function viewRegister(ma, msg) {
-  $('#app').innerHTML = `<div class="login"><div class="card">
-    <h1>Tạo mã PIN</h1><p>Dành cho nhân viên dùng app lần đầu, hoặc đã được quản lý đặt lại PIN.</p>
-    <form id="fReg" autocomplete="off">
-      <div class="field"><label for="rMa">Mã nhân viên</label><input id="rMa" inputmode="numeric" value="${esc(ma || '')}" required></div>
-      <div class="field"><label for="rNgay">Ngày vào làm</label><input id="rNgay" type="date" required>
-        <div class="hint">Đúng ngày vào làm trong hồ sơ nhân sự, dùng để xác minh là chính bạn.</div></div>
-      <div class="field"><label for="rPin">Mã PIN mới (4-8 số)</label><input id="rPin" type="password" inputmode="numeric" autocomplete="new-password" required></div>
-      <div class="field"><label for="rPin2">Nhập lại PIN</label><input id="rPin2" type="password" inputmode="numeric" autocomplete="new-password" required></div>
-      <div class="err" id="rErr">${esc(msg && !/chưa tạo mã PIN/.test(msg) ? msg : '')}</div>
-      <button class="btn primary block" id="rBtn">Tạo PIN và đăng nhập</button>
-    </form>
-    <button class="btn light block" id="rBack" style="margin-top:10px">Quay lại đăng nhập</button></div></div>`;
-  $('#rBack').onclick = () => viewLogin();
-  $('#fReg').onsubmit = async e => {
-    e.preventDefault();
-    const m = $('#rMa').value.trim(), pin = $('#rPin').value.trim();
-    if (!/^\d{4,8}$/.test(pin)) { $('#rErr').textContent = 'PIN gồm 4-8 chữ số'; return; }
-    if (pin !== $('#rPin2').value.trim()) { $('#rErr').textContent = 'Hai lần nhập PIN không giống nhau'; return; }
-    $('#rBtn').disabled = true; $('#rErr').textContent = 'Đang xác minh…';
-    try {
-      const r = await api('register', { ma: m, ngayVao: $('#rNgay').value, pin });
-      S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', m);
-      S.tab = 'scan'; shell(); loadList(); flush(); toast('Đã tạo PIN. Chào ' + r.user.ten);
-    } catch (err) { $('#rErr').textContent = err.message; $('#rBtn').disabled = false; }
-  };
+function loggedIn(r, ma) {
+  S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', ma);
+  S.tab = 'scan'; shell(); loadList(); flush();
+}
+
+// =====================================================================
+// KICH HOAT AUTHENTICATOR: 1 ma NV -> 2 quay khuon mat -> 3 them vao Authenticator + nhap ma
+// =====================================================================
+const EN = { step: 1, ma: '', start: null, selfie: '', stream: null, until: 0 };
+function stopSelfie() { if (EN.stream) { EN.stream.getTracks().forEach(t => t.stop()); EN.stream = null; } }
+function viewEnroll(ma, msg) {
+  stopScan(); stopSelfie();
+  Object.assign(EN, { step: 1, ma: ma || '', start: null, selfie: '', until: 0 });
+  renderEnroll(msg && !/chưa kích hoạt/.test(msg) ? msg : '');
+}
+function enrollSteps() {
+  return `<div class="steps">${['Mã NV', 'Khuôn mặt', 'Authenticator'].map((t, i) =>
+    `<div class="${EN.step === i + 1 ? 'on' : EN.step > i + 1 ? 'done' : ''}"><b>${EN.step > i + 1 ? '✓' : i + 1}</b><span>${t}</span></div>`).join('')}</div>`;
+}
+function renderEnroll(err) {
+  stopSelfie();
+  const st = EN.start;
+  const who = st ? `<div class="who"><b>${esc(st.ten || ('Mã NV ' + st.ma))}</b><span>Mã NV ${esc(st.ma)}${st.chucvu ? ' · ' + esc(st.chucvu) : ''}${st.hub ? ' · BC ' + esc(st.hub) : ''}</span></div>` : '';
+  let body = '';
+  if (EN.step === 1) body = `
+    <form id="e1"><div class="field"><label for="eMa">Mã nhân viên</label><input id="eMa" inputmode="numeric" value="${esc(EN.ma)}" required></div>
+      <div class="hint" style="margin:-4px 0 12px">Đăng nhập app bằng mã 6 số trên <b>Google Authenticator</b> hoặc <b>Microsoft Authenticator</b>.
+        Kích hoạt 1 lần, có <b>quay khuôn mặt để xác minh</b> — ảnh được lưu để quản lý đối chiếu.</div>
+      <div class="err" id="eErr">${esc(err || '')}</div>
+      <button class="btn primary block" id="eBtn">Tiếp tục</button></form>`;
+  else if (EN.step === 2) body = `${who}
+    <div class="selfie"><video id="eVid" playsinline muted autoplay></video><div class="ring"></div><div class="cd" id="eCd"></div>
+      ${EN.selfie ? `<img id="eShot" src="${EN.selfie}" alt="Ảnh xác minh">` : ''}</div>
+    <div class="hint" style="text-align:center;margin:8px 0 10px">${EN.selfie ? 'Ảnh xác minh đã chụp (3 khung hình). Rõ mặt thì bấm Tiếp tục.'
+      : 'Nhìn thẳng camera, đủ sáng, không đeo khẩu trang / kính râm. App chụp liên tiếp 3 khung hình trong 3 giây.'}</div>
+    <div class="err" id="eErr">${esc(err || '')}</div>
+    ${EN.selfie ? `<div class="row"><button class="btn light" id="eRe" style="flex:1">Quay lại</button><button class="btn primary" id="eNext" style="flex:1">Tiếp tục</button></div>`
+      : `<button class="btn primary block" id="eShoot">Quay xác minh khuôn mặt</button>`}`;
+  else body = `${who}
+    <ol class="guide">
+      <li>Cài app <b>Google Authenticator</b> (<a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener">iPhone</a> ·
+        <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener">Android</a>) hoặc Microsoft Authenticator.</li>
+      <li>Thêm tài khoản <b>Kiem ke COD</b>:
+        <a class="btn primary block" id="eAdd" href="${esc(st.uri)}" style="margin:8px 0">Thêm vào Authenticator trên máy này</a>
+        <div class="or">hoặc quét mã QR bằng điện thoại khác</div>
+        <div class="qr" id="eQr">${loader('Đang tạo mã QR', 2, true)}</div>
+        <div class="or">hoặc nhập khoá thủ công</div>
+        <div class="key"><code id="eKey">${esc(st.secret.replace(/(.{4})/g, '$1 ').trim())}</code><button class="btn light" id="eCopy" type="button">Sao chép</button></div></li>
+      <li>Nhập mã 6 số đang hiện trên app để xác nhận:</li></ol>
+    <form id="e3"><input id="eCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required>
+      <div class="err" id="eErr">${esc(err || '')}</div>
+      <button class="btn primary block" id="eBtn">Xác nhận và đăng nhập</button></form>
+    <div class="hint" id="eLeft" style="text-align:center;margin-top:8px"></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card"><h1>Kích hoạt Authenticator</h1>${enrollSteps()}${body}
+    <button class="btn light block" id="eBack" style="margin-top:10px">${EN.step === 1 ? 'Quay lại đăng nhập' : 'Làm lại từ đầu'}</button></div></div>`;
+  $('#eBack').onclick = () => EN.step === 1 ? viewLogin() : viewEnroll(EN.ma);
+  if (EN.step === 1) {
+    $('#e1').onsubmit = async e => { e.preventDefault();
+      EN.ma = $('#eMa').value.trim(); $('#eBtn').disabled = true; $('#eErr').textContent = 'Đang kiểm tra…';
+      try { EN.start = await api('enrollStart', { ma: EN.ma }); EN.until = Date.now() + 14.5 * 60000; EN.step = 2; renderEnroll(); }
+      catch (err) { $('#eErr').textContent = err.message; $('#eBtn').disabled = false; } };
+  } else if (EN.step === 2) {
+    if (EN.selfie) { $('#eRe').onclick = () => { EN.selfie = ''; renderEnroll(); }; $('#eNext').onclick = () => { EN.step = 3; renderEnroll(); }; }
+    else { startSelfie(); $('#eShoot').onclick = shootSelfie; }
+  } else {
+    makeQr(st.uri);
+    $('#eCopy').onclick = () => { try { navigator.clipboard.writeText(st.secret); toast('Đã sao chép khoá'); } catch (e) { toast('Không sao chép được, chép tay'); } };
+    $('#eCode').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); };
+    const tick = () => { const el = $('#eLeft'); if (!el) return; const s = Math.max(0, Math.round((EN.until - Date.now()) / 1000));
+      el.textContent = s ? 'Phiên kích hoạt còn ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : 'Phiên đã hết hạn — bấm Làm lại từ đầu'; if (s) setTimeout(tick, 1000); };
+    tick();
+    $('#e3').onsubmit = async e => { e.preventDefault();
+      const code = $('#eCode').value.trim();
+      if (!/^\d{6}$/.test(code)) { $('#eErr').textContent = 'Nhập đủ 6 số'; return; }
+      $('#eBtn').disabled = true; $('#eErr').textContent = 'Đang xác nhận…';
+      try {
+        const r = await api('enrollFinish', { enrollId: st.enrollId, ma: st.ma, code, selfie: EN.selfie, device: navigator.userAgent.slice(0, 120) });
+        EN.selfie = ''; EN.start = null; loggedIn(r, st.ma); toast('Đã kích hoạt Authenticator. Lần sau đăng nhập bằng mã 6 số.', 5000);
+      } catch (err) { $('#eErr').textContent = err.message; $('#eBtn').disabled = false; } };
+  }
+}
+async function startSelfie() {
+  try {
+    EN.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }, audio: false });
+    const v = $('#eVid'); if (!v) return stopSelfie(); v.srcObject = EN.stream; await v.play().catch(() => {});
+  } catch (e) {
+    const el = $('#eErr'); if (el) el.textContent = 'Không mở được camera trước. Cho phép camera cho trang này (Cài đặt trình duyệt) rồi bấm Làm lại. Bắt buộc quay khuôn mặt để kích hoạt.';
+    const b = $('#eShoot'); if (b) b.disabled = true;
+  }
+}
+// Chup 3 khung hinh trong 3 giay, ghep thanh 1 anh ngang, in ma NV + gio len anh
+async function shootSelfie() {
+  const v = $('#eVid'); if (!v || !v.videoWidth) { $('#eErr').textContent = 'Camera chưa sẵn sàng, đợi 1 giây rồi bấm lại'; return; }
+  $('#eShoot').disabled = true;
+  const W = 300, H = 400, frames = [];
+  for (let i = 0; i < 3; i++) {
+    $('#eCd').textContent = 3 - i;
+    await new Promise(r => setTimeout(r, i ? 1000 : 400));
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const vw = v.videoWidth, vh = v.videoHeight, sw = Math.min(vw, vh * W / H), sh = sw * H / W;
+    const x = c.getContext('2d'); x.translate(W, 0); x.scale(-1, 1);
+    x.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, W, H); frames.push(c);
+  }
+  $('#eCd').textContent = '';
+  const out = document.createElement('canvas'); out.width = W * 3; out.height = H + 64;
+  const g = out.getContext('2d'); g.fillStyle = '#111'; g.fillRect(0, 0, out.width, out.height);
+  frames.forEach((f, i) => g.drawImage(f, i * W, 0));
+  g.fillStyle = '#F26522'; g.fillRect(0, H, out.width, 64);
+  g.fillStyle = '#fff'; g.font = 'bold 22px system-ui, sans-serif';
+  g.fillText('Mã NV ' + EN.start.ma + (EN.start.ten ? ' · ' + EN.start.ten : ''), 14, H + 27);
+  g.font = '18px system-ui, sans-serif';
+  g.fillText('Xác minh kích hoạt Authenticator · ' + new Date().toLocaleString('vi-VN'), 14, H + 52);
+  EN.selfie = out.toDataURL('image/jpeg', 0.8);
+  stopSelfie(); renderEnroll();
+}
+function loadScriptOnce(srcs, ready) {
+  if (ready()) return Promise.resolve();
+  const one = src => new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src;
+    sc.onload = () => ready() ? ok() : no(); sc.onerror = () => { sc.remove(); no(); }; document.head.appendChild(sc); });
+  return srcs.reduce((p, src) => p.catch(() => one(src)), Promise.reject());
+}
+async function makeQr(uri) {
+  try {
+    await loadScriptOnce(GAS ? ['https://quynh2011.github.io/kiemke-cod/qrcode.min.js'] : ['qrcode.min.js', 'https://quynh2011.github.io/kiemke-cod/qrcode.min.js'], () => !!window.qrcode);
+    const q = qrcode(0, 'M'); q.addData(uri); q.make();
+    const el = $('#eQr'); if (el) el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
+  } catch (e) { const el = $('#eQr'); if (el) el.innerHTML = '<div class="hint">Không tạo được mã QR — dùng nút "Thêm vào Authenticator" hoặc nhập khoá.</div>'; }
 }
 function logout() { stopScan(); S.token = ''; S.user = null; S.data = null; store.del('token'); store.del('user'); viewLogin(); }
 function onApiError(e) { if (e.auth) { logout(); viewLogin(e.message); } else toast(e.message); }
@@ -1136,22 +1289,25 @@ function renderAdmin(q) {
   $('#view').innerHTML = `<div class="row" style="margin-bottom:10px"><input class="inp" id="aQ" placeholder="Tìm mã NV, tên, bưu cục…" value="${esc(q)}">
       <button class="btn primary" id="aNew" style="flex:none">+ Thêm</button></div>
     <div class="card" style="font-size:13px;color:var(--ink-2)"><b style="color:var(--ink)">Tài khoản nhân viên</b><br>
-      Nhân viên có trong sheet <b>Nhansu</b> tự tạo PIN (xác minh bằng ngày vào làm). Ai nghỉ việc bị chặn đăng nhập tự động.<br>
+      Đăng nhập bằng <b>Authenticator</b>. Nhân viên có trong sheet <b>Nhansu</b> tự kích hoạt, bắt buộc <b>quay khuôn mặt</b> — bấm ảnh để đối chiếu đúng người.
+      Sai người / đổi máy: mở tài khoản → <b>Đặt lại Authenticator</b>. Ai nghỉ việc bị chặn đăng nhập tự động.<br>
       Quyền tự động theo <b>Chức vụ</b>: Business Development Field Executive → đơn của chính NV · Operations Executive → đơn của bưu cục mình · Area Manager / Acting Area Manager → các bưu cục trong khu vực AM quản lý.
       Chỉ cần sửa ở đây khi muốn cấp quyền khác (ví dụ Quản lý xem toàn bộ).<br><br>
       <b style="color:var(--ink)">Phân quyền xem đơn cần kiểm</b><br>
       · <b>Nhân viên giao</b>: chỉ đơn có Mã NV giao = mã của mình<br>· <b>Nhân viên bưu cục</b>: đơn của các bưu cục được chọn<br>
       · <b>AM</b>: bưu cục của mình + các bưu cục có nhân viên ghi AM = tên mình (Nhansu) + bưu cục có ID AM = mã mình (Cauhinh)<br>· <b>Quản lý</b>: tất cả, xem báo cáo, quản trị tài khoản</div>
     <div class="h2">Tài khoản<small>${us.length}</small></div>
-    ${us.map(u => `<div class="order ${u.status === 'Khoá' ? 'miss' : 'ok'}" data-u="${esc(u.ma)}" style="cursor:pointer"><div class="body">
+    ${us.map(u => `<div class="order ${u.status === 'Khoá' ? 'miss' : 'ok'}" data-u="${esc(u.ma)}" style="cursor:pointer">${u.selfie ?
+      `<div class="thumb click" data-thumb="${esc(u.selfie)}" data-photo="${esc(u.selfie)}" data-cap="${esc('Ảnh xác minh · ' + u.ma + ' ' + u.ten + ' · ' + (u.authAt || ''))}" title="Ảnh xác minh khuôn mặt"></div>` : ''}<div class="body">
       <div class="o1"><span class="ocode">${esc(u.ten)}</span><span class="tag">${esc(u.effRoleVN || rn[u.role] || u.role)}${u.role === 'TU_DONG' ? ' · tự động' : ''}</span></div>
       <div class="sub">Mã NV ${esc(u.ma)}${u.chucvu ? ' · ' + esc(u.chucvu) : ''}${u.hubs.length ? ' · BC ' + esc(u.hubs.join(', ')) : ''}</div>
       <div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">${u.status === 'Khoá' ? '<span class="tag miss">Đã khoá</span>' : ''}
-        <span class="tag ${u.hasPin ? 'ok' : 'dup'}">${u.hasPin ? 'Đã có PIN' : 'Chưa tạo PIN'}</span>
+        <span class="tag ${u.hasAuth ? 'ok' : 'dup'}">${u.hasAuth ? 'Đã kích hoạt ' + esc(u.authAt || '') : 'Chưa kích hoạt Authenticator'}</span>
         ${u.nsStatus ? `<span class="tag ${u.nsStatus === 'Đang làm việc' ? '' : 'miss'}">${esc(u.nsStatus)}</span>` : ''}</div></div></div>`).join('')}`;
   $('#aQ').oninput = e => { const v = e.target.value; renderAdmin(v); const i = $('#aQ'); i.focus(); i.setSelectionRange(v.length, v.length); };
   $('#aNew').onclick = () => userForm(null);
-  document.querySelectorAll('[data-u]').forEach(el => el.onclick = () => userForm(a.users.find(u => u.ma === el.dataset.u)));
+  document.querySelectorAll('[data-u]').forEach(el => el.onclick = e => { if (e.target.closest('.thumb')) return; userForm(a.users.find(u => u.ma === el.dataset.u)); });
+  loadThumbs();
 }
 function userForm(u) {
   const a = S.admin, isNew = !u; u = u || { ma: '', ten: '', role: 'TU_DONG', hubs: [], status: 'Hoạt động' };
@@ -1164,13 +1320,15 @@ function userForm(u) {
     <div class="field" id="uHubBox"><label>Bưu cục được xem</label><input class="inp" id="uHubQ" placeholder="Lọc bưu cục…" style="margin-bottom:6px">
       <div class="hubpick" id="uHubs">${a.hubs.map(h => `<label data-h="${esc((h.code + ' ' + (h.name || '')).toUpperCase())}"><input type="checkbox" value="${esc(h.code)}" ${u.hubs.indexOf(h.code) >= 0 ? 'checked' : ''}>
         <span>${esc(h.code)} ${esc(h.name || '')}${h.amName ? ` <span class="k" style="color:var(--ink-3)">· AM: ${esc(String(h.amName).replace(/^AM\s+/i, ''))}</span>` : ''}</span></label>`).join('')}</div></div>
-    <div class="field"><label>${isNew ? 'Mã PIN (bỏ trống để nhân viên tự tạo)' : 'Đặt PIN mới (bỏ trống nếu giữ nguyên)'}</label><input id="uPin" inputmode="numeric" type="password">
-      <div class="hint">Người có trong sheet Nhansu có thể tự tạo PIN bằng ngày vào làm.</div>
-      ${!isNew && u.hasPin ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="uReset" style="width:20px;height:20px"> Đặt lại PIN — nhân viên tự tạo PIN mới khi đăng nhập</label>' : ''}</div>
+    <div class="field"><label>Đăng nhập</label>
+      ${u.hasAuth ? `<div style="display:flex;gap:10px;align-items:center">${u.selfie ? `<div class="selfthumb thumb click" data-thumb="${esc(u.selfie)}" data-photo="${esc(u.selfie)}" data-cap="${esc('Ảnh xác minh · ' + u.ma + ' · ' + (u.authAt || ''))}"></div>` : ''}
+        <div class="sub">Đã kích hoạt Authenticator lúc ${esc(u.authAt || '')}</div></div>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:8px"><input type="checkbox" id="uReset" style="width:20px;height:20px"> Đặt lại Authenticator — huỷ đăng nhập hiện tại, nhân viên kích hoạt lại (quay khuôn mặt)</label>`
+      : '<div class="hint">Chưa kích hoạt. Nhân viên tự bấm "Kích hoạt Authenticator" ở màn đăng nhập.</div>'}</div>
     <div class="field"><label>Trạng thái</label><div class="seg"><button type="button" data-s="Hoạt động">Hoạt động</button><button type="button" data-s="Khoá">Khoá</button></div></div>
     <div class="err" id="uErr"></div>
     <div class="row"><button type="button" class="btn light" id="uCancel" style="flex:1">Huỷ</button><button class="btn primary" style="flex:2" id="uSave">Lưu</button></div></form>`;
-  document.body.appendChild(bg);
+  document.body.appendChild(bg); loadThumbs();
   let status = u.status;
   const segs = bg.querySelectorAll('[data-s]');
   const setS = s => { status = s; segs.forEach(b => b.classList.toggle('on', b.dataset.s === s)); }; setS(status);
@@ -1191,7 +1349,7 @@ function userForm(u) {
     bg.querySelector('#uSave').disabled = true; bg.querySelector('#uErr').textContent = 'Đang lưu…';
     try {
       const r = await api('saveUser', { ma: bg.querySelector('#uMa').value.trim(), ten: bg.querySelector('#uTen').value.trim(), role, hubs,
-        pin: bg.querySelector('#uPin').value.trim(), status, resetPin: !!(reset && reset.checked) });
+        status, resetAuth: !!(reset && reset.checked) });
       bg.remove(); toast(r.created ? 'Đã tạo tài khoản' : 'Đã cập nhật'); viewAdmin();
     } catch (err) { bg.querySelector('#uErr').textContent = err.message; bg.querySelector('#uSave').disabled = false; }
   };
@@ -1206,16 +1364,14 @@ function viewMe() {
       <div class="sub">Mã NV ${esc(u.ma)} · ${esc(u.roleVN)}</div>
       <div class="sub" style="margin-top:6px">${u.all ? 'Phạm vi: <b>tất cả bưu cục</b>' : u.role === 'NV' ? 'Phạm vi: <b>đơn do mình giao</b>' :
         'Phạm vi bưu cục: <b>' + esc(u.hubs.join(', ') || 'chưa có') + '</b>'}</div></div>
-    <form class="card" id="fPin"><div class="h2" style="margin-top:0">Đổi mã PIN</div>
-      <div class="field"><label>PIN hiện tại</label><input id="pOld" type="password" inputmode="numeric" required></div>
-      <div class="field"><label>PIN mới (4-8 số)</label><input id="pNew" type="password" inputmode="numeric" required></div>
-      <div class="err" id="pErr"></div><button class="btn primary block">Đổi PIN</button></form>
+    <div class="card"><div class="h2" style="margin-top:0">Bảo mật đăng nhập</div>
+      <div style="display:flex;gap:12px;align-items:center">${u.selfie ? `<div class="selfthumb thumb click" data-thumb="${esc(u.selfie)}" data-photo="${esc(u.selfie)}" data-cap="${esc('Ảnh xác minh · ' + u.ma + ' · ' + (u.authAt || ''))}"></div>` : ''}
+        <div class="sub" style="color:var(--ink)">Đăng nhập bằng <b>Authenticator</b> (mã 6 số)${u.authAt ? '<br><span style="color:var(--ink-2)">Kích hoạt lúc ' + esc(u.authAt) + '</span>' : ''}</div></div>
+      <div class="hint" style="margin-top:10px">Đổi điện thoại hoặc mất app Authenticator: nhờ quản lý bấm <b>Đặt lại Authenticator</b>, rồi kích hoạt lại (có quay khuôn mặt).</div></div>
     <button class="btn light block" id="bOut">Đăng xuất</button>
     <div class="hint" style="text-align:center;margin-top:14px">${DEMO ? 'Chế độ thử · ' : ''}Kiểm kê COD v2</div>`;
-  $('#fPin').onsubmit = async e => { e.preventDefault();
-    try { await api('changePin', { oldPin: $('#pOld').value, pin: $('#pNew').value }); $('#pErr').textContent = ''; e.target.reset(); toast('Đã đổi PIN'); }
-    catch (err) { $('#pErr').textContent = err.message; } };
   $('#bOut').onclick = logout;
+  loadThumbs();
 }
 
 // =====================================================================

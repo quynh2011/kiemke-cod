@@ -19,7 +19,8 @@
  *   (BUU_CUC, AM, QUAN_LY xem duoc bao cao + anh trong pham vi cua minh)
  *
  * TRIEN KHAI (1 lan):
- *   1. Chay ham KKSetup() -> tao sheet + tai khoan QUAN_LY dau tien (ma KK_ADMIN.ma, PIN = Main!A3)
+ *   1. Chay ham KKSetup() -> tao sheet + tai khoan QUAN_LY dau tien (ma KK_ADMIN.ma)
+ *      Dang nhap = Ma NV + ma 6 so tren Google/Microsoft Authenticator. Lan dau: tu kich hoat (quay mat + quet QR).
  *   2. Deploy > New deployment > Web app | Execute as: Me | Who has access: Anyone
  *   3. Copy URL .../exec -> dan vao file config.js cua web app
  *   Sua code: Deploy > Manage deployments > Edit > Version: New version (URL giu nguyen)
@@ -30,7 +31,7 @@
 const KK_SRC_DATA = 'Data';
 const KK_SRC_CAUHINH = 'Cauhinh';
 const KK_SRC_MAIN = 'Main';
-// Danh sach nhan su (IMPORTRANGE) - dung de: tu dang ky PIN, chan nguoi nghi viec, lay ho ten
+// Danh sach nhan su (IMPORTRANGE) - dung de: kich hoat Authenticator, chan nguoi nghi viec, lay ho ten, chuc vu
 const KK_SRC_NHANSU = 'Nhansu';
 const KK_NHANSU_ACTIVE = 'Đang làm việc';   // gia tri cot "Trạng thái" cua nguoi dang lam
 
@@ -38,9 +39,13 @@ const KK_SH_USERS = 'KK_NguoiDung';
 const KK_SH_LIST = 'KK_DanhSach';
 const KK_SH_RESULT = 'KK_KetQua';
 const KK_SH_REPORT = 'KK_BaoCao';
+const KK_SH_VERIFY = 'KK_XacMinh';      // nhat ky kich hoat Authenticator + anh khuon mat
+const KK_VERIFY_HEADERS = ['Thời gian', 'Mã NV', 'Họ tên', 'Chức vụ', 'Bưu cục', 'Sự kiện', 'Ảnh xác minh', 'File ảnh', 'Thiết bị', 'Thực hiện bởi'];
+const KK_TOTP_ISSUER = 'Kiem ke COD';    // ten hien trong app Authenticator
+const KK_ENROLL_MIN = 15;                // phien kich hoat het han sau 15 phut
 const KK_PHOTO_ROOT = 'KiemKe_AnhDonHang';
 
-// Tai khoan QUAN_LY tao khi chay KKSetup (PIN ban dau = Main!A3, doi ngay trong app)
+// Tai khoan QUAN_LY tao khi chay KKSetup (tu kich hoat Authenticator lan dau)
 const KK_ADMIN = { ma: '3172684', ten: 'Phạm Văn Quỳnh' };
 
 const KK_ROLES = ['NV', 'BUU_CUC', 'AM', 'QUAN_LY'];
@@ -56,7 +61,8 @@ const KK_MAX_LOGIN_FAIL = 5;
 
 const KK_RES = { OK: 'Đúng danh sách', OUT: 'Ngoài danh sách', DUP: 'Quét lại' };
 
-const KK_USER_HEADERS = ['Mã NV', 'Họ tên', 'Vai trò', 'Bưu cục', 'PIN (mã hoá)', 'Trạng thái', 'Cập nhật lúc', 'Cập nhật bởi'];
+const KK_USER_HEADERS = ['Mã NV', 'Họ tên', 'Vai trò', 'Bưu cục', 'PIN (mã hoá)', 'Trạng thái', 'Cập nhật lúc', 'Cập nhật bởi',
+  'Authenticator', 'Ảnh xác minh'];
 const KK_LIST_HEADERS = ['Ngày', 'Bưu cục', 'Mã đơn', 'COD', 'Mã NV giao', 'Tên NV giao', 'SĐT NV giao', 'Mã chuyến',
   'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc', 'Loại khỏi DS', 'Quận/Huyện giao', 'Tỉnh giao',
   'Lý do giao thất bại'];
@@ -107,7 +113,8 @@ function kkHandle_(b) {
   try {
     const a = b.action;
     if (a === 'login') return kkLogin_(b);
-    if (a === 'register') return kkRegister_(b);
+    if (a === 'enrollStart') return kkEnrollStart_(b);
+    if (a === 'enrollFinish') return kkEnrollFinish_(b);
     const me = kkAuth_(b.token);
     if (a === 'me') return { ok: true, user: kkPublicUser_(me) };
     if (a === 'list') return kkList_(me);
@@ -115,7 +122,6 @@ function kkHandle_(b) {
     if (a === 'scan') return kkScan_(me, b);
     if (a === 'report') return kkReport_(me, b);
     if (a === 'photo') return kkPhoto_(me, b);
-    if (a === 'changePin') return kkChangePin_(me, b);
     if (a === 'users') return kkUsers_(me);
     if (a === 'saveUser') return kkSaveUser_(me, b);
     return { ok: false, error: 'Thao tác không hợp lệ' };
@@ -127,29 +133,35 @@ function kkHandle_(b) {
 // ================================================================
 // DANG NHAP + TOKEN
 // ================================================================
+// Dang nhap: Ma NV + ma 6 so tren app Authenticator (TOTP, 30 giay/ma)
 function kkLogin_(b) {
   const ma = String(b.ma || '').trim();
-  const pin = String(b.pin || '').trim();
-  if (!ma || !pin) throw new Error('Nhập mã NV và mã PIN');
+  const code = String(b.code || b.pin || '').replace(/\s/g, '');
+  if (!ma || !code) throw new Error('Nhập mã NV và mã 6 số trên Authenticator');
   const cache = CacheService.getScriptCache();
   const failKey = 'kkfail_' + ma;
   const fails = Number(cache.get(failKey) || 0);
-  if (fails >= KK_MAX_LOGIN_FAIL) throw new Error('Sai PIN quá ' + KK_MAX_LOGIN_FAIL + ' lần. Thử lại sau 15 phút.');
+  if (fails >= KK_MAX_LOGIN_FAIL) throw new Error('Nhập sai quá ' + KK_MAX_LOGIN_FAIL + ' lần. Thử lại sau 15 phút.');
   const u = kkFindUser_(ma);
   kkCheckActive_(u, ma);
-  if (!u.hash) { const e = new Error('Bạn chưa tạo mã PIN. Bấm "Lần đầu dùng app? Tạo mã PIN"'); e.needSetup = true; throw e; }
-  if (u.hash !== kkHash_(ma, pin)) {
+  const secret = kkTotpSecret_(ma);
+  if (!u.auth || !secret) {
+    const e = new Error('Mã NV ' + ma + ' chưa kích hoạt Authenticator. Bấm "Lần đầu dùng app? Kích hoạt Authenticator".');
+    e.needSetup = true; throw e;
+  }
+  if (!kkTotpCheck_(secret, code, ma)) {
     cache.put(failKey, String(fails + 1), 900);
-    throw new Error('Sai mã NV hoặc PIN');
+    throw new Error('Mã Authenticator không đúng hoặc đã hết hạn. Nhập mã đang hiện trên app.');
   }
   cache.remove(failKey);
-  return { ok: true, token: kkSign_({ u: u.ma, exp: Date.now() + KK_TOKEN_HOURS * 3600000 }), user: kkPublicUser_(u) };
+  return { ok: true, token: kkSign_({ u: u.ma, a: u.auth, exp: Date.now() + KK_TOKEN_HOURS * 3600000 }), user: kkPublicUser_(u) };
 }
 
 function kkAuth_(token) {
   const p = kkVerify_(token);
   const u = p && kkFindUser_(p.u);
-  if (!u || !u.hash) { const e = new Error('Phiên đăng nhập hết hạn, đăng nhập lại'); e.auth = true; throw e; }
+  // Quan ly dat lai Authenticator -> u.auth doi -> moi phien cu bi huy ngay
+  if (!u || !u.auth || p.a !== u.auth) { const e = new Error('Phiên đăng nhập hết hạn, đăng nhập lại'); e.auth = true; throw e; }
   try { kkCheckActive_(u, u.ma); } catch (err) { err.auth = true; throw err; }
   return u;
 }
@@ -187,7 +199,8 @@ function kkReadUsers_() {
   if (sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, KK_USER_HEADERS.length).getDisplayValues().map(function (r, i) {
     return { row: i + 2, ma: String(r[U['Mã NV']]).trim(), ten: r[U['Họ tên']], role: String(r[U['Vai trò']]).trim().toUpperCase(),
-      hubs: kkSplit_(r[U['Bưu cục']]), hash: r[U['PIN (mã hoá)']], status: String(r[U['Trạng thái']]).trim() || 'Hoạt động' };
+      hubs: kkSplit_(r[U['Bưu cục']]), hash: r[U['PIN (mã hoá)']], status: String(r[U['Trạng thái']]).trim() || 'Hoạt động',
+      auth: String(r[U['Authenticator']] || '').trim(), selfie: String(r[U['Ảnh xác minh']] || '').trim() };
   }).filter(function (u) { return u.ma; });
 }
 // Tai khoan hieu luc = dong trong KK_NguoiDung (neu co) + thong tin Nhansu + vai tro tu dong
@@ -197,7 +210,7 @@ function kkFindUser_(ma) {
   const row = kkReadUsers_().filter(function (u) { return u.ma === ma; })[0] || null;
   const ns = kkNhansu_(ma);
   if (!row && !ns) return null;
-  const u = row ? Object.assign({}, row) : { row: 0, ma: ma, ten: '', role: '', hubs: [], hash: '', status: 'Hoạt động' };
+  const u = row ? Object.assign({}, row) : { row: 0, ma: ma, ten: '', role: '', hubs: [], hash: '', status: 'Hoạt động', auth: '', selfie: '' };
   u.storedRole = u.role;
   u.ten = u.ten || (ns ? ns.ten : '');
   u.ns = ns;
@@ -285,39 +298,152 @@ function kkNhansu_(ma) {
   return ns;
 }
 
-// Nhan vien TU TAO PIN lan dau (hoac sau khi quan ly dat lai PIN): xac minh bang ngay vao lam trong Nhansu
-function kkRegister_(b) {
-  const ma = String(b.ma || '').trim(), pin = String(b.pin || '').trim();
+// ================================================================
+// AUTHENTICATOR (TOTP RFC 6238) + XAC MINH KHUON MAT
+// ================================================================
+// Buoc 1: nhap ma NV -> tao khoa bi mat (chua luu), tra QR / link otpauth
+function kkEnrollStart_(b) {
+  const ma = String(b.ma || '').trim();
   if (!/^\d{3,10}$/.test(ma)) throw new Error('Nhập mã nhân viên (chỉ gồm số)');
-  if (!/^\d{4,8}$/.test(pin)) throw new Error('PIN gồm 4-8 chữ số');
   const cache = CacheService.getScriptCache();
-  const failKey = 'kkreg_' + ma;
-  const fails = Number(cache.get(failKey) || 0);
-  if (fails >= KK_MAX_LOGIN_FAIL) throw new Error('Nhập sai quá ' + KK_MAX_LOGIN_FAIL + ' lần. Thử lại sau 30 phút hoặc nhờ quản lý.');
+  const rk = 'kkenrs_' + ma, n = Number(cache.get(rk) || 0);
+  if (n >= 10) throw new Error('Thử kích hoạt quá nhiều lần. Thử lại sau 30 phút.');
+  cache.put(rk, String(n + 1), 1800);
   const u = kkFindUser_(ma);
   kkCheckActive_(u, ma);
-  if (u.hash) throw new Error('Mã NV này đã có PIN. Quên PIN thì nhờ quản lý bấm "Đặt lại PIN".');
-  if (!u.ns) throw new Error('Mã NV không có trong sheet Nhansu - nhờ quản lý tạo tài khoản');
-  if (!u.ns.start || kkDayStr_(b.ngayVao) !== u.ns.start) {
-    cache.put(failKey, String(fails + 1), 1800);
-    throw new Error('Ngày vào làm không khớp hồ sơ nhân sự');
+  if (u.auth && kkTotpSecret_(ma)) {
+    throw new Error('Mã NV ' + ma + ' đã kích hoạt Authenticator. Đổi máy / mất mã thì nhờ quản lý bấm "Đặt lại Authenticator".');
   }
-  cache.remove(failKey);
+  const secret = kkB32Encode_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+    Utilities.getUuid() + Utilities.getUuid() + Date.now() + ma).slice(0, 20));
+  const id = Utilities.getUuid();
+  cache.put('kkenr_' + id, JSON.stringify({ ma: ma, secret: secret }), KK_ENROLL_MIN * 60);
+  const ns = u.ns || {};
+  const label = encodeURIComponent(KK_TOTP_ISSUER + ':' + ma + (u.ten ? ' ' + u.ten : ''));
+  return { ok: true, enrollId: id, secret: secret, ma: ma, ten: u.ten || '', chucvu: ns.chucvu || '', hub: ns.hub || (u.hubs || [])[0] || '',
+    uri: 'otpauth://totp/' + label + '?secret=' + secret + '&issuer=' + encodeURIComponent(KK_TOTP_ISSUER) + '&algorithm=SHA1&digits=6&period=30' };
+}
+
+// Buoc 2: anh khuon mat + ma 6 so dau tien -> luu khoa, ghi nhat ky xac minh, dang nhap luon
+function kkEnrollFinish_(b) {
+  const ma = String(b.ma || '').trim(), code = String(b.code || '').replace(/\s/g, '');
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get('kkenr_' + String(b.enrollId || ''));
+  const pend = raw ? JSON.parse(raw) : null;
+  if (!pend || pend.ma !== ma) throw new Error('Phiên kích hoạt đã hết hạn (' + KK_ENROLL_MIN + ' phút). Làm lại từ đầu.');
+  const selfie = kkStripB64_(b.selfie || '');
+  if (selfie.length < 2000) throw new Error('Thiếu ảnh xác minh khuôn mặt. Quay lại bước chụp khuôn mặt.');
+  if (selfie.length > 3000000) throw new Error('Ảnh xác minh quá lớn');
+  const fk = 'kkenrf_' + b.enrollId, f = Number(cache.get(fk) || 0);
+  if (f >= 5) { cache.remove('kkenr_' + b.enrollId); throw new Error('Nhập sai mã quá 5 lần. Làm lại từ đầu.'); }
+  if (!kkTotpCheck_(pend.secret, code, ma)) {
+    cache.put(fk, String(f + 1), KK_ENROLL_MIN * 60);
+    throw new Error('Mã 6 số chưa đúng. Kiểm tra đã thêm đúng tài khoản vào Authenticator và giờ điện thoại đặt tự động.');
+  }
+  const u = kkFindUser_(ma);
+  kkCheckActive_(u, ma);
+  const tz = Session.getScriptTimeZone(), now = new Date();
+  const authAt = Utilities.formatDate(now, tz, 'dd/MM/yyyy HH:mm:ss');
   const lock = kkLock_();
   lock.waitLock(20000);
+  let file;
   try {
-    const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
-    const at = u.row || sh.getLastRow() + 1;
-    const rec = [ma, u.ten, u.storedRole || KK_ROLE_AUTO, (u.hubs || []).join(', '), kkHash_(ma, pin), 'Hoạt động', new Date(), 'Tự đăng ký'];
-    sh.getRange(at, 1).setNumberFormat('@');
-    sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([rec]);
+    const again = kkFindUser_(ma);
+    if (again.auth && kkTotpSecret_(ma)) throw new Error('Mã NV ' + ma + ' vừa được kích hoạt trên máy khác. Nhờ quản lý kiểm tra.');
+    file = kkVerifyFolder_().createFile(Utilities.newBlob(Utilities.base64Decode(selfie), 'image/jpeg',
+      ma + '_' + Utilities.formatDate(now, tz, 'yyyyMMdd_HHmmss') + '_kichhoat.jpg'));
+    PropertiesService.getScriptProperties().setProperty('kktotp_' + ma, pend.secret);
+    kkWriteAuth_(u, authAt, file.getId(), 'Tự kích hoạt');
+    kkLogVerify_(now, u, 'Kích hoạt Authenticator', file, String(b.device || '').slice(0, 120), u.ten || ma);
   } finally { lock.releaseLock(); }
-  return kkLogin_({ ma: ma, pin: pin });
+  cache.remove('kkenr_' + b.enrollId);
+  const fresh = kkFindUser_(ma);
+  return { ok: true, token: kkSign_({ u: ma, a: fresh.auth, exp: Date.now() + KK_TOKEN_HOURS * 3600000 }), user: kkPublicUser_(fresh) };
 }
+
+// Ghi cot Authenticator + Anh xac minh (tao dong moi neu nguoi nay chua co trong KK_NguoiDung)
+function kkWriteAuth_(u, authAt, fileId, by) {
+  const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
+  kkEnsureHeaders_(sh, KK_USER_HEADERS);
+  if (u.row) {
+    sh.getRange(u.row, U['Authenticator'] + 1, 1, 2).setNumberFormat('@').setValues([[authAt, fileId]]);
+    sh.getRange(u.row, U['PIN (mã hoá)'] + 1).setValue('');
+    sh.getRange(u.row, U['Cập nhật lúc'] + 1, 1, 2).setValues([[new Date(), by]]);
+    return;
+  }
+  const at = sh.getLastRow() + 1;
+  sh.getRange(at, 1).setNumberFormat('@');
+  sh.getRange(at, U['Authenticator'] + 1, 1, 2).setNumberFormat('@');
+  sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([[u.ma, u.ten || '', u.storedRole || KK_ROLE_AUTO, (u.hubs || []).join(', '), '',
+    'Hoạt động', new Date(), by, authAt, fileId]]);
+}
+
+function kkLogVerify_(when, u, event, file, device, by) {
+  const sh = kkSheet_(KK_SH_VERIFY, KK_VERIFY_HEADERS);
+  const ns = u.ns || {};
+  const at = sh.getLastRow() + 1;
+  sh.getRange(at, 2).setNumberFormat('@');
+  sh.getRange(at, 1, 1, KK_VERIFY_HEADERS.length).setValues([[when, u.ma, u.ten || '', ns.chucvu || '', ns.hub || (u.hubs || []).join(', '),
+    event, file ? file.getUrl() : '', file ? file.getId() : '', device || '', by || '']]);
+}
+
+function kkVerifyFolder_() {
+  const root = kkRootFolder_();
+  const it = root.getFoldersByName('XacMinh_KhuonMat');
+  return it.hasNext() ? it.next() : root.createFolder('XacMinh_KhuonMat');
+}
+
+function kkTotpSecret_(ma) { return PropertiesService.getScriptProperties().getProperty('kktotp_' + ma) || ''; }
+
+// Kiem tra ma 6 so: cho lech +-1 buoc (30s) do gio dien thoai; moi ma chi dung 1 lan
+function kkTotpCheck_(secret, code, ma) {
+  if (!/^\d{6}$/.test(code)) return false;
+  const c = Math.floor(Date.now() / 30000), cache = CacheService.getScriptCache();
+  for (let d = -1; d <= 1; d++) {
+    if (kkTotp_(secret, c + d) !== code) continue;
+    const used = 'kkotpu_' + ma + '_' + (c + d);
+    if (cache.get(used)) return false;
+    cache.put(used, '1', 180);
+    return true;
+  }
+  return false;
+}
+function kkTotp_(secret, counter) {
+  const key = kkB32Decode_(secret).map(function (x) { return x > 127 ? x - 256 : x; });
+  const msg = [];
+  let c = counter;
+  for (let i = 7; i >= 0; i--) { msg[i] = c % 256; c = Math.floor(c / 256); }
+  const h = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_SHA_1, msg.map(function (x) { return x > 127 ? x - 256 : x; }), key)
+    .map(function (x) { return x & 255; });
+  const o = h[19] & 15;
+  const bin = ((h[o] & 127) * 16777216) + (h[o + 1] << 16) + (h[o + 2] << 8) + h[o + 3];
+  return ('000000' + (bin % 1000000)).slice(-6);
+}
+const KK_B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function kkB32Encode_(bytes) {
+  let bits = 0, val = 0, out = '';
+  bytes.forEach(function (b) {
+    val = (val << 8) | (b & 255); bits += 8;
+    while (bits >= 5) { out += KK_B32[(val >>> (bits - 5)) & 31]; bits -= 5; }
+  });
+  if (bits > 0) out += KK_B32[(val << (5 - bits)) & 31];
+  return out;
+}
+function kkB32Decode_(s) {
+  let bits = 0, val = 0;
+  const out = [];
+  String(s).toUpperCase().replace(/[^A-Z2-7]/g, '').split('').forEach(function (ch) {
+    val = (val << 5) | KK_B32.indexOf(ch); bits += 5;
+    if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; }
+  });
+  return out;
+}
+
 function kkPublicUser_(u) {
   const sc = kkScope_(u);
   return { ma: u.ma, ten: u.ten, role: u.role, roleVN: KK_ROLE_VN[u.role] || u.role,
-    hubs: sc.all ? [] : Object.keys(sc.hubs), all: sc.all, canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY' };
+    hubs: sc.all ? [] : Object.keys(sc.hubs), all: sc.all, canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY',
+    authAt: u.auth || '', selfie: u.selfie || '' };
 }
 
 // Danh sach buu cuc tu Cauhinh: { code: {name, amId, amName} } (tim cot theo tieu de)
@@ -573,11 +699,15 @@ function kkScan_(me, b) {
   }
 }
 
-function kkDayFolder_(day) {
+function kkRootFolder_() {
   const props = PropertiesService.getScriptProperties();
   let rootId = props.getProperty('KK_FOLDER_ID'), root = null;
   try { root = rootId ? DriveApp.getFolderById(rootId) : null; } catch (e) { root = null; }
   if (!root) { root = DriveApp.createFolder(KK_PHOTO_ROOT); props.setProperty('KK_FOLDER_ID', root.getId()); }
+  return root;
+}
+function kkDayFolder_(day) {
+  const root = kkRootFolder_();
   const name = day.split('/').reverse().join('-'); // yyyy-MM-dd
   const it = root.getFoldersByName(name);
   return it.hasNext() ? it.next() : root.createFolder(name);
@@ -599,6 +729,15 @@ function kkPhoto_(me, b) {
       if (sc.all || String(r[R['Mã người kiểm']]) === me.ma || kkInScope_(sc, r[R['Bưu cục']], r[R['Mã NV giao']])) allowed[id] = true;
     });
   });
+  // Anh xac minh khuon mat: quan ly xem tat ca; AM xem trong khu vuc minh; nguoi dung chi xem anh cua chinh minh
+  const vsh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SH_VERIFY);
+  if (vsh && vsh.getLastRow() > 1 && ids.some(function (i) { return !allowed[i]; })) {
+    vsh.getRange(2, 1, vsh.getLastRow() - 1, KK_VERIFY_HEADERS.length).getValues().forEach(function (r) {
+      const id = String(r[7]);
+      if (!want[id]) return;
+      if (sc.all || String(r[1]) === me.ma || (me.role === 'AM' && kkSplit_(r[4]).some(function (h) { return sc.hubs[h]; }))) allowed[id] = true;
+    });
+  }
   const out = {};
   ids.forEach(function (id) {
     if (!allowed[id]) return;
@@ -724,7 +863,8 @@ function kkUsers_(me) {
       const ns = kkNhansu_(u.ma);
       const eff = !u.role || u.role === KK_ROLE_AUTO ? kkAutoRole_(u.ma, ns) : u.role;
       return { ma: u.ma, ten: u.ten || (ns ? ns.ten : ''), role: u.role || KK_ROLE_AUTO, effRole: eff, effRoleVN: KK_ROLE_VN[eff],
-        hubs: u.hubs, status: u.status, hasPin: !!u.hash, chucvu: ns ? ns.chucvu : '', nsStatus: ns ? (ns.active ? 'Đang làm việc' : 'Đã nghỉ / ' + (ns.status || '')) : 'Không có trong Nhansu' };
+        hubs: u.hubs, status: u.status, hasAuth: !!(u.auth && kkTotpSecret_(u.ma)), authAt: u.auth, selfie: u.selfie,
+        chucvu: ns ? ns.chucvu : '', nsStatus: ns ? (ns.active ? 'Đang làm việc' : 'Đã nghỉ / ' + (ns.status || '')) : 'Không có trong Nhansu' };
     }) };
 }
 
@@ -738,51 +878,42 @@ function kkSaveUser_(me, b) {
   if (role === 'BUU_CUC' && !hubs.length) throw new Error('Nhân viên bưu cục phải chọn ít nhất 1 bưu cục');
   const status = b.status === 'Khoá' ? 'Khoá' : 'Hoạt động';
   if (ma === me.ma && (status === 'Khoá' || role !== 'QUAN_LY')) throw new Error('Không tự khoá hoặc hạ quyền chính mình');
-  const pin = String(b.pin || '').trim();
-  if (pin && !/^\d{4,8}$/.test(pin)) throw new Error('PIN gồm 4-8 chữ số');
 
   const lock = kkLock_();
   lock.waitLock(20000);
   try {
     const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
     const old = kkReadUsers_().filter(function (x) { return x.ma === ma; })[0] || null;
-    const ns = kkNhansu_(ma);
-    // Khong dat PIN: nguoi co trong Nhansu tu tao PIN; nguoi ngoai Nhansu thi bat buoc dat
-    if (!old && !pin && !ns) throw new Error('Mã NV không có trong Nhansu nên phải đặt PIN');
-    const hash = b.resetPin ? '' : pin ? kkHash_(ma, pin) : (old ? old.hash : '');
-    const row = [ma, ten, role, hubs.join(', '), hash, status, new Date(), me.ten];
+    kkEnsureHeaders_(sh, KK_USER_HEADERS);
+    // Dat lai Authenticator: xoa khoa + ngay kich hoat -> phien cu bi huy, nhan vien tu kich hoat lai (kem anh khuon mat)
+    const reset = !!(b.resetAuth || b.resetPin);
+    if (reset) PropertiesService.getScriptProperties().deleteProperty('kktotp_' + ma);
+    const row = [ma, ten, role, hubs.join(', '), '', status, new Date(), me.ten,
+      reset || !old ? '' : old.auth, reset || !old ? '' : old.selfie];
     const at = old ? old.row : sh.getLastRow() + 1; // old.row = dong that trong sheet
     sh.getRange(at, 1).setNumberFormat('@');
+    sh.getRange(at, U['Authenticator'] + 1, 1, 2).setNumberFormat('@');
     sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([row]);
+    if (reset && old && old.auth) kkLogVerify_(new Date(), Object.assign({ ns: kkNhansu_(ma) }, old), 'Quản lý đặt lại Authenticator', null, '', me.ten);
     return { ok: true, created: !old };
   } finally {
     lock.releaseLock();
   }
 }
 
-function kkChangePin_(me, b) {
-  const oldPin = String(b.oldPin || ''), pin = String(b.pin || '').trim();
-  if (me.hash !== kkHash_(me.ma, oldPin)) throw new Error('PIN cũ không đúng');
-  if (!/^\d{4,8}$/.test(pin)) throw new Error('PIN mới gồm 4-8 chữ số');
-  kkSheet_(KK_SH_USERS, KK_USER_HEADERS).getRange(me.row, U['PIN (mã hoá)'] + 1).setValue(kkHash_(me.ma, pin));
-  return { ok: true };
-}
-
 // ================================================================
 // CAI DAT 1 LAN
 // ================================================================
 function KKSetup() {
-  [[KK_SH_USERS, KK_USER_HEADERS], [KK_SH_LIST, KK_LIST_HEADERS], [KK_SH_RESULT, KK_RESULT_HEADERS], [KK_SH_REPORT, KK_REPORT_HEADERS]]
-    .forEach(function (x) { kkSheet_(x[0], x[1]); });
+  [[KK_SH_USERS, KK_USER_HEADERS], [KK_SH_LIST, KK_LIST_HEADERS], [KK_SH_RESULT, KK_RESULT_HEADERS], [KK_SH_REPORT, KK_REPORT_HEADERS],
+    [KK_SH_VERIFY, KK_VERIFY_HEADERS]].forEach(function (x) { kkEnsureHeaders_(kkSheet_(x[0], x[1]), x[1]); });
   kkSecret_();
-  if (!kkReadUsers_().some(function (u) { return u.ma === KK_ADMIN.ma && u.hash; })) {
-    const pin = String(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_MAIN).getRange('A3').getDisplayValue()).trim();
-    if (!/^\d{4,8}$/.test(pin)) throw new Error('Đặt PIN ban đầu (4-8 chữ số) vào Main!A3 rồi chạy lại KKSetup');
+  if (!kkReadUsers_().some(function (u) { return u.ma === KK_ADMIN.ma; })) {
     const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);
     const at = sh.getLastRow() + 1;
     sh.getRange(at, 1).setNumberFormat('@');
-    sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([[KK_ADMIN.ma, KK_ADMIN.ten, 'QUAN_LY', '', kkHash_(KK_ADMIN.ma, pin), 'Hoạt động', new Date(), 'KKSetup']]);
-    console.log('[KiemKe] Da tao tai khoan QUAN_LY ' + KK_ADMIN.ma + ' (PIN = Main!A3). Xoa PIN o Main!A3 sau khi dang nhap.');
+    sh.getRange(at, 1, 1, KK_USER_HEADERS.length).setValues([[KK_ADMIN.ma, KK_ADMIN.ten, 'QUAN_LY', '', '', 'Hoạt động', new Date(), 'KKSetup', '', '']]);
+    console.log('[KiemKe] Da tao tai khoan QUAN_LY ' + KK_ADMIN.ma + '. Mo app -> "Kich hoat Authenticator" de dang nhap.');
   }
   kkSnapshot_(true);
   KKCaiTrigger();

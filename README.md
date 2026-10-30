@@ -44,12 +44,14 @@ Khi đó app chạy **thẳng từ link `/exec`** của Apps Script:
 
 Khi `config.js` để trống `api`, app chạy **demo**: dữ liệu mẫu, không ghi Google Sheet.
 
-| Vai trò | Mã NV | PIN |
-|---|---|---|
-| Quản lý | 3172684 | 123456 |
-| NV bưu cục 22524000 | 2000001 | 1111 |
-| NV giao | 3179060 | 1111 |
-| AM | 4000001 | 1111 |
+| Vai trò | Mã NV |
+|---|---|
+| Quản lý | 3172684 |
+| NV bưu cục 22524000 | 2000001 |
+| NV giao | 3179060 |
+| AM | 4000001 |
+
+Lần đầu mỗi tài khoản bấm **Kích hoạt Authenticator** (demo cũng dùng mã Authenticator thật).
 
 Mã đơn mẫu để quét (in mã vạch Code128 hoặc QR ra giấy / mở trên máy khác):
 `GYMBDFP9`, `NVS871726729`, `GYMWX3B3`, `GYMPHUXG`, `GYM3D7K4`
@@ -59,14 +61,13 @@ Mã đơn mẫu để quét (in mã vạch Code128 hoặc QR ra giấy / mở tr
 ### 1. Backend Apps Script
 1. Mở project Apps Script đang có `COD_check.gs`, thêm file `KiemKe`, dán nội dung `KiemKe.gs`.
 2. Thay toàn bộ `COD_check.gs` bằng bản mới đi kèm. Bản này tự chốt lại danh sách kiểm sau mỗi lần `CODScan` chạy xong.
-3. Sheet **Main!A3**: ghi **PIN ban đầu** (4-8 chữ số) cho tài khoản quản lý `3172684`.
 4. Chạy hàm **`KKSetup`**. Hàm này:
    - tạo các sheet `KK_NguoiDung`, `KK_DanhSach`, `KK_KetQua`, `KK_BaoCao`;
    - tạo tài khoản quản lý;
    - chốt danh sách hôm nay;
    - đặt trigger tổng hợp lúc 21h.
 5. **Deploy → New deployment → Web app**: Execute as **Me**, Who has access **Anyone**. Copy URL `.../exec`.
-6. Đăng nhập app bằng `3172684` + PIN ở A3, **đổi PIN** ở tab Tài khoản, rồi **xoá Main!A3**.
+6. Mở app → **Kích hoạt Authenticator** bằng mã `3172684` (tài khoản quản lý).
 
 ### 2. Nối web với backend
 Sửa `config.js` trong repo:
@@ -81,7 +82,10 @@ Mỗi lần sửa `KiemKe.gs`: **Deploy → Manage deployments → Edit → Vers
 
 ## Tài khoản nhân viên (sheet Nhansu)
 
-- Nhân viên **tự tạo PIN** ở màn đăng nhập ("Lần đầu dùng app? Tạo mã PIN"), xác minh bằng **Ngày vào làm**.
+- Đăng nhập = **Mã NV + mã 6 số trên Google / Microsoft Authenticator** (TOTP, đổi mỗi 30 giây, mỗi mã dùng 1 lần).
+- Lần đầu: màn đăng nhập → **Kích hoạt Authenticator** → nhập mã NV → **quay khuôn mặt** (3 khung hình, in mã NV + giờ) →
+  thêm vào Authenticator (nút mở app / QR / khoá) → nhập mã 6 số. Ảnh lưu Drive `KiemKe_AnhDonHang/XacMinh_KhuonMat`, nhật ký sheet **KK_XacMinh**.
+- Mã NV đã kích hoạt thì không ai kích hoạt đè được. Sai người / đổi máy: Quản trị → tài khoản → **Đặt lại Authenticator** (phiên cũ bị huỷ ngay).
 - Ai có Trạng thái khác "Đang làm việc" hoặc có Ngày nghỉ việc → **bị chặn đăng nhập ngay**, kể cả đang đăng nhập dở.
 - Quyền tự động theo **Chức vụ**:
 
@@ -91,7 +95,7 @@ Mỗi lần sửa `KiemKe.gs`: **Deploy → Manage deployments → Edit → Vers
 | Operations Executive | NV bưu cục | Đơn của bưu cục mình (cột Bưu cục) |
 | Area Manager / Acting Area Manager | AM | Các bưu cục trong khu vực mình quản lý |
 
-Quên PIN: quản lý vào tab Quản trị → chọn người → tick "Đặt lại PIN".
+Khoá bí mật Authenticator lưu trong Script Properties (`kktotp_<mã NV>`), không nằm trên sheet.
 
 ## Phân quyền (sheet KK_NguoiDung / tab Quản trị)
 
@@ -119,4 +123,4 @@ Quét đơn **không thuộc phạm vi** thì app báo "Ngoài danh sách". Lầ
 - **Còn thiếu cuối ngày** = đơn chưa ai thấy trong kho → đối chiếu với NV giao (có SĐT trên thẻ đơn).
 
 ---
-Thư viện: [html5-qrcode](https://github.com/mebjas/html5-qrcode) 2.3.8 và [SheetJS xlsx](https://sheetjs.com) 0.18.5 (Apache-2.0), kèm trong repo.
+Thư viện: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 (MIT), [html5-qrcode](https://github.com/mebjas/html5-qrcode) 2.3.8 và [SheetJS xlsx](https://sheetjs.com) 0.18.5 (Apache-2.0), kèm trong repo.

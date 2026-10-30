@@ -8,7 +8,22 @@ Web app trên điện thoại để kiểm kê **đơn COD giá trị cao** (dan
 - **Phân quyền**: nhân viên giao / nhân viên bưu cục / AM / quản lý.
 - **Báo cáo** theo khoảng ngày: theo bưu cục, NV giao, người kiểm, AM, ngày. Xem ảnh nét, tải CSV.
 
-## Tài khoản Google nội bộ (ví dụ @ghn.vn)
+## Chạy trên Vercel (khuyên dùng với tài khoản Google công ty)
+
+Web App Apps Script của tài khoản @ghn.vn chỉ mở cho người trong công ty. `api/kk.js` trên Vercel chuyển tiếp yêu cầu
+từ app vào Web App, kèm access token của tài khoản @ghn.vn (OAuth refresh token, scope `drive.readonly`).
+Nhân viên chỉ cần link Vercel, đăng nhập bằng Mã NV + PIN, không cần tài khoản Google.
+
+| Biến môi trường | Ý nghĩa |
+|---|---|
+| `KK_GAS_URL` | link `/exec` của Web App Apps Script |
+| `GOOGLE_OAUTH_CLIENT_ID` · `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth client (Web application) trên Google Cloud |
+| `GOOGLE_OAUTH_REFRESH_TOKEN` | lấy 1 lần qua `/api/oauth-start` bằng tài khoản @ghn.vn |
+
+OAuth client phải có Authorized redirect URI `https://<domain>/api/oauth-callback`. Đổi biến xong phải **Redeploy**.
+Trên GitHub Pages (không có `/api`), app tự chạy chế độ demo.
+
+## Tài khoản Google nội bộ – chạy thẳng từ link Apps Script (cách dự phòng)
 
 Tài khoản công ty chỉ deploy được **"Bất kỳ ai trong tổ chức"**, nên trang GitHub Pages không gọi được backend.
 Khi đó app chạy **thẳng từ link `/exec`** của Apps Script:

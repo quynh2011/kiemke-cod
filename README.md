@@ -12,7 +12,7 @@ Web app trên điện thoại để kiểm kê **đơn COD giá trị cao** (dan
 
 Web App Apps Script của tài khoản @ghn.vn chỉ mở cho người trong công ty. `api/kk.js` trên Vercel chuyển tiếp yêu cầu
 từ app vào Web App, kèm access token của tài khoản @ghn.vn (OAuth refresh token, scope `drive.readonly`).
-Nhân viên chỉ cần link Vercel, đăng nhập bằng Mã NV + PIN, không cần tài khoản Google.
+Nhân viên chỉ cần link Vercel, đăng nhập bằng Mã NV + mã Authenticator, không cần tài khoản Google.
 
 | Biến môi trường | Ý nghĩa |
 |---|---|

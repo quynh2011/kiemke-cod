@@ -83,6 +83,15 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .hubsel label { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .hubsel select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
   font: inherit; font-size: 14.5px; color: var(--ink); }
+.fbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.fsum { font-size: 12.5px; color: var(--ink-2); flex-basis: 100%; }
+.fpanel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 12px; margin-bottom: 10px; }
+.fpanel .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fpanel .fld:last-child { grid-column: 1 / -1; }
+.fpanel label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.fpanel select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); font: inherit; font-size: 14px; color: var(--ink); }
+@media (max-width: 380px) { .fpanel { grid-template-columns: 1fr; } }
 .refreshline { text-align: center; font-size: 12.5px; color: var(--ink-2); padding: 0 0 8px; }
 .hubtag { font-weight: 600; color: var(--ink); }
 .st { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 2px 8px; color: #fff; }
@@ -398,7 +407,7 @@ const Q = (function () {
 // =====================================================================
 const S = {
   token: store.get('token', ''), user: store.get('user', null), tab: 'scan',
-  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false,
+  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false, f: store.get('filters', {}), fOpen: false,
   scanner: null, scanning: false, torch: false, busy: false, cand: null,
   report: null, rep: { from: todayISO(), to: todayISO(), hub: '', group: 'hub', filter: 'miss' }, admin: null
 };
@@ -564,11 +573,54 @@ document.addEventListener('click', e => {
   const el = e.target.closest('.order[data-o]'); if (el) openOrder(el.dataset.o);
 });
 function hubLabel(o) { return esc(o.hub || '') + (o.hubName ? ' · ' + esc(o.hubName) : ''); }
-function dv() {
+// ---- Bo loc: trang thai, NV giao, so lan giao, COD, dia chi giao ----
+const COD_RANGES = [['lt2', 'Dưới 2 triệu', 0, 2e6], ['2-5', '2 - 5 triệu', 2e6, 5e6], ['5-10', '5 - 10 triệu', 5e6, 1e7], ['ge10', 'Từ 10 triệu', 1e7, Infinity]];
+const fAddr = o => [o.ward, o.district].filter(Boolean).join(', ');
+const fAtt = o => { const n = Number(o.attempts); return o.attempts === '' || o.attempts == null || isNaN(n) ? '?' : n >= 4 ? '4+' : String(n); };
+const FILTERS = [
+  { k: 'status', label: 'Trạng thái đơn', val: o => o.status || '', name: v => v || '(trống)' },
+  { k: 'driver', label: 'Nhân viên giao', val: o => o.driverId || o.driverName || '', name: (v, o) => (o && o.driverName ? o.driverName + ' · ' : '') + v },
+  { k: 'att', label: 'Số lần giao', val: fAtt, name: v => v === '?' ? 'Không rõ' : v === '4+' ? 'Từ 4 lần' : v + ' lần' },
+  { k: 'cod', label: 'COD', val: o => (COD_RANGES.find(r => o.cod >= r[2] && o.cod < r[3]) || COD_RANGES[0])[0], name: v => (COD_RANGES.find(r => r[0] === v) || [, v])[1] },
+  { k: 'addr', label: 'Địa chỉ giao', val: fAddr, name: v => v || '(không rõ)' }
+];
+function passF(o, skip) { return FILTERS.every(F => F.k === skip || !S.f[F.k] || F.val(o) === S.f[F.k]); }
+function nF() { return FILTERS.filter(F => S.f[F.k]).length; }
+function dv(skipF) {
   const d = S.data || { orders: [], checked: {}, extra: [], closed: [] };
-  if (!S.hub) return d;
-  const f = x => x.hub === S.hub;
-  return Object.assign({}, d, { orders: d.orders.filter(f), extra: (d.extra || []).filter(f), closed: (d.closed || []).filter(f) });
+  const h = x => !S.hub || x.hub === S.hub;
+  const any = nF();
+  const of = o => h(o) && (!any || passF(o, skipF));
+  // Don Ngoai DS khong co thong tin don -> chi loc theo buu cuc; dang loc chi tiet thi an
+  return Object.assign({}, d, { orders: d.orders.filter(of), extra: any ? [] : (d.extra || []).filter(h), closed: (d.closed || []).filter(of) });
+}
+function filterPanel() {
+  const d = S.data || { orders: [], closed: [] };
+  const base = d.orders.filter(o => !S.hub || o.hub === S.hub);
+  const sel = FILTERS.map(F => {
+    // So luong theo cac bo loc con lai (bo qua chinh bo loc nay)
+    const m = {};
+    base.filter(o => passF(o, F.k)).forEach(o => { const v = F.val(o); m[v] = m[v] || { n: 0, o }; m[v].n++; });
+    let keys = Object.keys(m);
+    if (F.k === 'cod') keys = COD_RANGES.map(r => r[0]).filter(k => m[k]);
+    else if (F.k === 'att') keys.sort((a, b) => (a === '?') - (b === '?') || parseInt(a) - parseInt(b));
+    else keys.sort((a, b) => m[b].n - m[a].n || a.localeCompare(b));
+    if (S.f[F.k] && !m[S.f[F.k]]) keys.unshift(S.f[F.k]);
+    return `<div class="fld"><label>${F.label}</label><select data-fk="${F.k}"><option value="">Tất cả</option>${keys.map(v =>
+      `<option value="${esc(v)}"${S.f[F.k] === v ? ' selected' : ''}>${esc(F.name(v, m[v] && m[v].o))} (${m[v] ? m[v].n : 0})</option>`).join('')}</select></div>`;
+  }).join('');
+  const n = nF();
+  return `<div class="fbar"><button class="chip${n ? ' on' : ''}" id="fTog">Bộ lọc${n ? ' · ' + n : ''} ${S.fOpen ? '▲' : '▼'}</button>
+    ${n ? `<button class="chip" id="fClr">Xoá lọc</button><span class="fsum">${FILTERS.filter(F => S.f[F.k]).map(F => esc(F.name(S.f[F.k], base.find(o => F.val(o) === S.f[F.k])))).join(' · ')}</span>` : ''}</div>
+    ${S.fOpen ? `<div class="fpanel">${sel}</div>` : ''}`;
+}
+function bindFilters() {
+  const t = $('#fTog'); if (t) t.onclick = () => { S.fOpen = !S.fOpen; renderList(); };
+  const c = $('#fClr'); if (c) c.onclick = () => { S.f = {}; store.set('filters', S.f); renderList(); };
+  document.querySelectorAll('[data-fk]').forEach(el => el.onchange = () => {
+    if (el.value) S.f[el.dataset.fk] = el.value; else delete S.f[el.dataset.fk];
+    store.set('filters', S.f); renderList();
+  });
 }
 function counts() {
   const d = dv();
@@ -588,6 +640,7 @@ function statsHTML() {
     <button class="stat miss${on('miss')}" data-go="miss"><b class="num">${c.miss}</b><span>Còn thiếu</span></button>
     <button class="stat bad${on('bad')}" data-go="bad"><b class="num">${c.extra}</b><span>Ngoài DS</span></button></div>
     <div class="bar"><i style="width:${c.need ? c.done / c.need * 100 : 0}%"></i></div>
+    ${nF() && S.tab !== 'list' ? `<button class="closedline" data-go="miss">Đang lọc ${nF()} điều kiện · số liệu theo bộ lọc ›</button>` : ''}
     <div class="refreshline"${S.refreshing ? '' : ' hidden'}>Đang cập nhật trạng thái đơn từ GHN…</div>
     ${c.closed ? `<button class="closedline" data-go="closed">Đã loại <b>${c.closed}</b> đơn (đã giao / hoàn / rời bưu cục)${d.statusAt ? ' · cập nhật ' + esc(d.statusAt.split(' ')[0]) : ''} ›</button>` : ''}`;
 }
@@ -848,7 +901,8 @@ function viewList() {
     <div class="chips" id="lTabs">${[['miss', 'Còn thiếu'], ['ok', 'Đã kiểm'], ['bad', 'Ngoài DS'], ['all', 'Tất cả'], ['closed', 'Đã loại']].map(t =>
       `<button class="chip${S.listTab === t[0] ? ' on' : ''}" data-t="${t[0]}">${t[1]}</button>`).join('')}
       <button class="chip" id="lReload">${'Tải lại'}</button></div>
-    <input class="inp" id="lSearch" placeholder="Tìm mã đơn, tên NV, chuyến, bưu cục…" value="${esc(S.search)}" style="margin-bottom:10px">
+    <div id="fBox"></div>
+    <input class="inp" id="lSearch" placeholder="Tìm mã đơn, tên NV, hàng hoá, địa chỉ…" value="${esc(S.search)}" style="margin-bottom:10px">
     <div class="h2"><span id="lTitle"></span><small id="lCount"></small></div><div id="lItems"></div>`;
   document.querySelectorAll('#lTabs [data-t]').forEach(b => b.onclick = () => { S.listTab = b.dataset.t; viewList(); });
   $('#lReload').onclick = () => loadList().then(() => toast('Đã tải lại, đang cập nhật trạng thái GHN…'));
@@ -858,10 +912,11 @@ function viewList() {
 function renderList() {
   const box = $('#lItems'); if (!box) return;
   $('#stats2').innerHTML = statsHTML(); bindStats($('#stats2'));
+  $('#fBox').innerHTML = S.listTab === 'bad' ? '' : filterPanel(); bindFilters();
   if (!S.data) { box.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
   const d = dv();
   const q = S.search.trim().toUpperCase();
-  const m = o => !q || [o.order, o.driverName, o.trip, o.driverId, o.hub, o.hubName].join(' ').toUpperCase().indexOf(q) >= 0;
+  const m = o => !q || [o.order, o.driverName, o.trip, o.driverId, o.hub, o.hubName, o.goods, o.ward, o.district, o.status].join(' ').toUpperCase().indexOf(q) >= 0;
   let html = '', n = 0;
   const title = { miss: 'Còn thiếu (chưa thấy trong kho)', ok: 'Đã kiểm', bad: 'Ngoài danh sách', all: 'Tất cả đơn cần kiểm',
     closed: 'Đã loại (đã giao / hoàn / rời bưu cục)' }[S.listTab];

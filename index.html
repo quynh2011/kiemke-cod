@@ -92,7 +92,22 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .fpanel label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
 .fpanel select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); font: inherit; font-size: 14px; color: var(--ink); }
 @media (max-width: 380px) { .fpanel { grid-template-columns: 1fr; } }
-.refreshline { text-align: center; font-size: 12.5px; color: var(--ink-2); padding: 0 0 8px; }
+/* Thanh tien do: uoc luong % theo thoi gian, nhay 100% khi xong */
+.ld { padding: 26px 8px; text-align: center; color: var(--ink-2); font-size: 13.5px; }
+.ld.sm { padding: 2px 0 10px; font-size: 12.5px; }
+.ld .lt { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ld .lt b { color: var(--brand); font-variant-numeric: tabular-nums; }
+.ldbar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; position: relative; }
+.ld.sm .ldbar { height: 5px; }
+.ldbar i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 99px; transition: width .3s ease-out;
+  background: linear-gradient(90deg, var(--brand), #FF9A5C, var(--brand)); background-size: 200% 100%; animation: ldShine 1.2s linear infinite; }
+@keyframes ldShine { from { background-position: 200% 0; } to { background-position: 0 0; } }
+#topbar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; pointer-events: none; opacity: 0; transition: opacity .2s; }
+#topbar.on { opacity: 1; } #topbar i { display: block; height: 100%; width: 40%; background: var(--brand); animation: topRun 1.1s ease-in-out infinite; }
+@keyframes topRun { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.dettog { display: flex; width: 100%; justify-content: space-between; align-items: center; margin: 14px 0 8px; padding: 12px 14px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r); font: inherit; font-weight: 700; font-size: 15px; color: var(--ink); cursor: pointer; }
+.dettog small { font-weight: 500; color: var(--ink-2); }
 .hubtag { font-weight: 600; color: var(--ink); }
 .st { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 2px 8px; color: #fff; }
 .st.go { background: #0B6E3F; } .st.other { background: #B45309; }
@@ -242,7 +257,15 @@ const GAS = !!(window.google && google.script && google.script.run);
 const API = GAS ? 'gas' : qs.get('demo') ? '' : (store.get('api', '') || CFG.api || '');
 const DEMO = !API;
 
+let BUSY = 0;
+function busy(d) { BUSY = Math.max(0, BUSY + d); let tb = document.getElementById('topbar');
+  if (!tb) { tb = document.createElement('div'); tb.id = 'topbar'; tb.innerHTML = '<i></i>'; document.body.appendChild(tb); }
+  tb.classList.toggle('on', BUSY > 0); }
 async function api(action, data) {
+  busy(1);
+  try { return await apiRaw(action, data); } finally { busy(-1); }
+}
+async function apiRaw(action, data) {
   const body = Object.assign({ action, token: S.token }, data || {});
   if (DEMO) return Demo.call(body);
   let j;
@@ -528,7 +551,22 @@ async function refreshStatus() {
   } catch (e) { if (e.auth) onApiError(e); }
   finally { S.refreshing = false; paintRefresh(); }
 }
-function paintRefresh() { document.querySelectorAll('.refreshline').forEach(el => { el.hidden = !S.refreshing; }); }
+function paintRefresh() { document.querySelectorAll('.refreshline').forEach(el => { el.innerHTML = S.refreshing ? loader('Đang cập nhật trạng thái đơn từ GHN', 25, true, 'ghn') : ''; }); }
+// Thanh % chay: uoc luong theo thoi gian du kien (giay), tien dan toi 95%, xong thi noi dung duoc thay the
+const LD = {};
+function loader(text, expectSec, small, key) {
+  key = key || text; if (!LD[key]) LD[key] = Date.now();
+  return `<div class="ld${small ? ' sm' : ''}" data-ld="${esc(key)}" data-exp="${expectSec || 8}"><div class="lt"><span>${esc(text)}…</span><b>0%</b></div><div class="ldbar"><i></i></div></div>`;
+}
+setInterval(() => {
+  const live = {};
+  document.querySelectorAll('[data-ld]').forEach(el => {
+    const k = el.dataset.ld; live[k] = 1; if (!LD[k]) LD[k] = Date.now();
+    const t = (Date.now() - LD[k]) / 1000, pct = Math.min(95, Math.round(95 * (1 - Math.exp(-t / (Number(el.dataset.exp) / 2)))));
+    el.querySelector('i').style.width = pct + '%'; el.querySelector('b').textContent = pct + '%';
+  });
+  Object.keys(LD).forEach(k => { if (!live[k]) delete LD[k]; });
+}, 200);
 
 // Loc theo buu cuc (AM / quan ly / NV buu cuc nhieu BC)
 function hubList() {
@@ -576,11 +614,13 @@ function hubLabel(o) { return esc(o.hub || '') + (o.hubName ? ' · ' + esc(o.hub
 // ---- Bo loc: trang thai, NV giao, so lan giao, COD, dia chi giao ----
 const COD_RANGES = [['lt2', 'Dưới 2 triệu', 0, 2e6], ['2-5', '2 - 5 triệu', 2e6, 5e6], ['5-10', '5 - 10 triệu', 5e6, 1e7], ['ge10', 'Từ 10 triệu', 1e7, Infinity]];
 const fAddr = o => [o.ward, o.district].filter(Boolean).join(', ');
-const fAtt = o => { const n = Number(o.attempts); return o.attempts === '' || o.attempts == null || isNaN(n) ? '?' : n >= 4 ? '4+' : String(n); };
+const ATT_BUCKETS = [['0', '0 lần'], ['1', '1 lần'], ['2', '2 lần'], ['3', '3 lần'], ['4-5', 'Trên 3 lần (4–5)'], ['6-7', 'Trên 5 lần (6–7)'], ['8+', 'Trên 7 lần (8+)']];
+const fAtt = o => { const n = Number(o.attempts); if (o.attempts === '' || o.attempts == null || isNaN(n)) return '?';
+  return n <= 3 ? String(Math.max(0, n)) : n <= 5 ? '4-5' : n <= 7 ? '6-7' : '8+'; };
 const FILTERS = [
   { k: 'status', label: 'Trạng thái đơn', val: o => o.status || '', name: v => v || '(trống)' },
   { k: 'driver', label: 'Nhân viên giao', val: o => o.driverId || o.driverName || '', name: (v, o) => (o && o.driverName ? o.driverName + ' · ' : '') + v },
-  { k: 'att', label: 'Số lần giao', val: fAtt, name: v => v === '?' ? 'Không rõ' : v === '4+' ? 'Từ 4 lần' : v + ' lần' },
+  { k: 'att', label: 'Số lần giao', val: fAtt, name: v => v === '?' ? 'Không rõ' : (ATT_BUCKETS.find(b => b[0] === v) || [, v])[1] },
   { k: 'cod', label: 'COD', val: o => (COD_RANGES.find(r => o.cod >= r[2] && o.cod < r[3]) || COD_RANGES[0])[0], name: v => (COD_RANGES.find(r => r[0] === v) || [, v])[1] },
   { k: 'addr', label: 'Địa chỉ giao', val: fAddr, name: v => v || '(không rõ)' }
 ];
@@ -603,7 +643,7 @@ function filterPanel() {
     base.filter(o => passF(o, F.k)).forEach(o => { const v = F.val(o); m[v] = m[v] || { n: 0, o }; m[v].n++; });
     let keys = Object.keys(m);
     if (F.k === 'cod') keys = COD_RANGES.map(r => r[0]).filter(k => m[k]);
-    else if (F.k === 'att') keys.sort((a, b) => (a === '?') - (b === '?') || parseInt(a) - parseInt(b));
+    else if (F.k === 'att') keys = ATT_BUCKETS.map(b => b[0]).concat(m['?'] ? ['?'] : []); // luon du cac moc, ke ca 0 don
     else keys.sort((a, b) => m[b].n - m[a].n || a.localeCompare(b));
     if (S.f[F.k] && !m[S.f[F.k]]) keys.unshift(S.f[F.k]);
     return `<div class="fld"><label>${F.label}</label><select data-fk="${F.k}"><option value="">Tất cả</option>${keys.map(v =>
@@ -641,7 +681,7 @@ function statsHTML() {
     <button class="stat bad${on('bad')}" data-go="bad"><b class="num">${c.extra}</b><span>Ngoài DS</span></button></div>
     <div class="bar"><i style="width:${c.need ? c.done / c.need * 100 : 0}%"></i></div>
     ${nF() && S.tab !== 'list' ? `<button class="closedline" data-go="miss">Đang lọc ${nF()} điều kiện · số liệu theo bộ lọc ›</button>` : ''}
-    <div class="refreshline"${S.refreshing ? '' : ' hidden'}>Đang cập nhật trạng thái đơn từ GHN…</div>
+    <div class="refreshline">${S.refreshing ? loader('Đang cập nhật trạng thái đơn từ GHN', 25, true, 'ghn') : ''}</div>
     ${c.closed ? `<button class="closedline" data-go="closed">Đã loại <b>${c.closed}</b> đơn (đã giao / hoàn / rời bưu cục)${d.statusAt ? ' · cập nhật ' + esc(d.statusAt.split(' ')[0]) : ''} ›</button>` : ''}`;
 }
 function bindStats(root) {
@@ -679,7 +719,7 @@ function viewScan() {
 }
 function recentHTML() {
   const d = S.data;
-  if (!d) return '<div class="empty">Đang tải danh sách…</div>';
+  if (!d) return loader('Đang tải danh sách đơn', 6);
   const items = [];
   Object.keys(d.checked).forEach(k => items.push(Object.assign({ order: k, kind: 'ok' }, d.checked[k])));
   d.extra.forEach(x => items.push(Object.assign({ kind: 'bad' }, x)));
@@ -913,7 +953,7 @@ function renderList() {
   const box = $('#lItems'); if (!box) return;
   $('#stats2').innerHTML = statsHTML(); bindStats($('#stats2'));
   $('#fBox').innerHTML = S.listTab === 'bad' ? '' : filterPanel(); bindFilters();
-  if (!S.data) { box.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
+  if (!S.data) { box.innerHTML = loader('Đang tải danh sách đơn', 6); return; }
   const d = dv();
   const q = S.search.trim().toUpperCase();
   const m = o => !q || [o.order, o.driverName, o.trip, o.driverId, o.hub, o.hubName, o.goods, o.ward, o.district, o.status].join(' ').toUpperCase().indexOf(q) >= 0;
@@ -974,7 +1014,7 @@ function fillHubs(hubs) {
 async function runReport() {
   S.rep.from = $('#rFrom').value; S.rep.to = $('#rTo').value;
   if ($('#rHub').options.length > 1) S.rep.hub = $('#rHub').value; // giu bo loc buu cuc khi vao lai tab
-  $('#rOut').innerHTML = '<div class="empty">Đang tổng hợp…</div>';
+  $('#rOut').innerHTML = loader('Đang tổng hợp báo cáo', 10);
   try {
     S.report = await api('report', { from: isoToVN(S.rep.from), to: isoToVN(S.rep.to), hub: S.rep.hub });
     fillHubs(S.report.hubs); renderReport();
@@ -1002,8 +1042,8 @@ function renderReport() {
         ${isChk ? `<td class="num">${g.done}</td><td class="num">${g.extra}</td><td class="num">${g.rescan}</td>` :
         `<td class="num">${g.need}</td><td class="num">${g.done}</td><td class="num"><b>${g.miss}</b></td><td class="num">${g.rate === null ? '' : g.rate + '%'}</td><td class="num">${money(g.codMiss)}</td><td class="num">${g.rescan}</td>`}</tr>`).join('') ||
         '<tr><td colspan="7" class="empty">Không có dữ liệu</td></tr>'}</tbody></table></div>
-    <div class="h2">Chi tiết đơn<small>${det.length} đơn</small></div>
-    <div class="chips">${[['miss', 'Còn thiếu'], ['ok', 'Đã kiểm (có ảnh)'], ['bad', 'Ngoài DS'], ['all', 'Tất cả']].map(x =>
+    <button class="dettog" id="rDet"><span>Chi tiết đơn <small>· ${det.length} đơn</small></span><span>${p.showDet ? 'Thu gọn ▲' : 'Xem ▼'}</span></button>
+    ${p.showDet ? `<div class="chips">${[['miss', 'Còn thiếu'], ['ok', 'Đã kiểm (có ảnh)'], ['bad', 'Ngoài DS'], ['all', 'Tất cả']].map(x =>
       `<button class="chip${p.filter === x[0] ? ' on' : ''}" data-f="${x[0]}">${x[1]}</button>`).join('')}</div>
     <div>${det.slice(0, 400).map(d => { const kind = p.filter === 'bad' ? 'bad' : d.done ? 'ok' : 'miss';
       return `<div class="order ${kind}">${d.thumb ? `<div class="thumb click" data-thumb="${esc(d.thumb)}" data-photo="${esc(d.photo)}" data-cap="${esc(d.order + ' · ' + d.day + ' ' + (d.time || '') + ' · ' + (d.by || ''))}"></div>` : ''}
@@ -1012,7 +1052,8 @@ function renderReport() {
         ${d.status ? `<div class="sub" style="margin-top:4px">${stTag(d.status)}</div>` : ''}
         <span class="tag ${kind}">${kind === 'ok' ? 'Đã kiểm ' + esc(d.time) + ' · ' + esc(d.by) : kind === 'bad' ? 'Ngoài DS · ' + esc(d.time) + ' · ' + esc(d.by) : 'Chưa thấy trong kho'}</span>
         ${d.rescan ? ` <span class="tag dup">Quét lại ${d.rescan} lần</span>` : ''}</div></div>`; }).join('') || '<div class="empty">Không có đơn nào</div>'}
-      ${det.length > 400 ? '<div class="hint" style="text-align:center">Hiển thị 400 đơn đầu, tải CSV để xem đủ</div>' : ''}</div>`;
+      ${det.length > 400 ? '<div class="hint" style="text-align:center">Hiển thị 400 đơn đầu, tải CSV để xem đủ</div>' : ''}</div>` : ''}`;
+  $('#rDet').onclick = () => { S.rep.showDet = !S.rep.showDet; renderReport(); };
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { S.rep.group = b.dataset.g; renderReport(); });
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.rep.filter = b.dataset.f; renderReport(); });
   $('#rCsv').onclick = exportCsv;
@@ -1032,7 +1073,7 @@ function exportCsv() {
 // TRANG QUAN TRI (PHAN QUYEN)
 // =====================================================================
 async function viewAdmin() {
-  $('#view').innerHTML = '<div class="empty">Đang tải tài khoản…</div>';
+  $('#view').innerHTML = loader('Đang tải danh sách tài khoản', 8);
   try { S.admin = await api('users'); } catch (e) { onApiError(e); return; }
   renderAdmin();
 }

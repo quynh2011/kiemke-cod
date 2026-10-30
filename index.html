@@ -142,6 +142,7 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 @keyframes popIn { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet .x { float: right; margin: -6px -4px 0 8px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg);
   font-size: 20px; line-height: 1; color: var(--ink-2); cursor: pointer; }
+.sheet-bg.noanim .sheet { animation: none; }
 .odlive { font-size: 12px; color: var(--ink-3); margin: -4px 0 6px; min-height: 16px; } .odlive .ld.sm { padding: 0; }
 .od { display: grid; grid-template-columns: 96px 1fr; gap: 8px 10px; font-size: 14px; margin: 8px 0 14px; }
 .od dt { color: var(--ink-2); } .od dd { margin: 0; font-weight: 500; white-space: pre-line; word-break: break-word; }
@@ -751,7 +752,7 @@ function openOrder(code, again) {
   const c = (d.checked || {})[code];
   const addr = [o.ward, o.district, o.province].filter(Boolean).join(', ');
   const fails = String(o.fails || '').replace(/\s*\|\s*/g, '\n').trim();
-  const bg = document.createElement('div'); bg.className = 'sheet-bg center'; bg.dataset.order = code;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg center' + (again ? ' noanim' : ''); bg.dataset.order = code;
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
     <div class="odlive">${again ? 'Đã cập nhật từ GHN lúc ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       : loader('Đang lấy trạng thái mới nhất từ GHN', 6, true, 'od_' + code)}</div>

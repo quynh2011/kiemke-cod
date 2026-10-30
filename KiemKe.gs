@@ -320,7 +320,7 @@ function kkEnrollStart_(b) {
   cache.put('kkenr_' + id, JSON.stringify({ ma: ma, secret: secret }), KK_ENROLL_MIN * 60);
   const ns = u.ns || {};
   const label = encodeURIComponent(KK_TOTP_ISSUER + ':' + ma + (u.ten ? ' ' + u.ten : ''));
-  return { ok: true, enrollId: id, secret: secret, ma: ma, ten: u.ten || '', chucvu: ns.chucvu || '', hub: ns.hub || (u.hubs || [])[0] || '',
+  return { ok: true, enrollId: id, ma: ma, ten: u.ten || '', chucvu: ns.chucvu || '', hub: ns.hub || (u.hubs || [])[0] || '',
     uri: 'otpauth://totp/' + label + '?secret=' + secret + '&issuer=' + encodeURIComponent(KK_TOTP_ISSUER) + '&algorithm=SHA1&digits=6&period=30' };
 }
 

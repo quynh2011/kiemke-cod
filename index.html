@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#F26522">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Kiểm kê COD</title>
+<title>Vận hành bưu cục</title>
 <script src="config.js?v=20261030"></script>
 <script src="html5-qrcode.min.js"></script>
 <style>
@@ -102,6 +102,30 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .key { display: flex; gap: 8px; align-items: center; } .key code { flex: 1; font-size: 13.5px; background: var(--bg); padding: 9px 10px; border-radius: 8px; word-break: break-all; letter-spacing: .5px; }
 .key .btn { height: 38px; padding: 0 12px; }
 .selfthumb { width: 96px; height: 64px; border-radius: 8px; background: #111 center/cover no-repeat; flex: none; }
+.hello { margin: 4px 0 14px; font-size: 16px; } .hello span { display: block; font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.mods { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mod { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 14px; min-height: 140px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px; font: inherit; color: var(--ink); cursor: pointer; }
+.mod i { width: 42px; height: 42px; border-radius: 12px; background: var(--brand); color: #fff; display: grid; place-items: center; margin-bottom: 4px; }
+.mod i svg { width: 22px; height: 22px; } .mod b { font-size: 15px; } .mod span { font-size: 12.5px; color: var(--ink-2); line-height: 1.35; }
+.mod em { font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--ok); margin-top: auto; }
+.mod.soon { opacity: .6; } .mod.soon i { background: var(--ink-3); } .mod.soon em { color: var(--ink-3); }
+.mod:active { transform: scale(.98); }
+.bl { display: inline-flex; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 2px 7px; color: #fff; }
+.bl.b1 { background: #B45309; } .bl.b2 { background: #C2410C; } .bl.b3 { background: #991B1B; }
+.hd { display: inline-flex; font-size: 12px; border-radius: 6px; padding: 2px 7px; }
+.hd.go { background: #DCFCE7; color: #0B6E3F; } .hd.ok { background: var(--ok-soft); color: var(--ok); }
+.hd.wait { background: var(--warn-soft); color: #92400E; } .hd.bad { background: var(--miss-soft); color: var(--miss); } .hd.none { background: var(--bg); color: var(--ink-2); }
+.qform { background: var(--bg); border-radius: 12px; padding: 12px; margin: 4px 0 12px; }
+.qform select, .qform input, .qform textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); font: inherit; font-size: 14.5px; color: var(--ink); margin-bottom: 8px; }
+.qform textarea { min-height: 64px; resize: vertical; }
+.qlog { font-size: 13px; border-left: 3px solid var(--line); padding: 2px 0 2px 10px; margin-bottom: 8px; }
+.qlog b { font-size: 13.5px; } .qlog span { color: var(--ink-2); display: block; }
+.pmod { padding: 10px 0; border-top: 1px solid var(--line); } .pmod > b { font-size: 14.5px; }
+.pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
+.pgrid label { display: flex; flex-direction: column; gap: 3px; min-width: 0; } .pgrid span { font-size: 11.5px; color: var(--ink-2); }
+.pgrid select { width: 100%; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--card); color: var(--ink); }
 .hubsel { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .hubsel label { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .hubsel select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
@@ -267,7 +291,11 @@ const ICON = {
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
   zoom: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/>',
   dl: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
-  reload: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'
+  reload: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  check: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>'
 };
 const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 
@@ -354,7 +382,23 @@ const Demo = (function () {
   const scope = u => u.role === 'QUAN_LY' ? () => true : u.role === 'NV' ? o => o.driverId === u.ma : o => u.hubs.indexOf(o.hub) !== -1;
   const pub = u => ({ ma: u.ma, ten: u.ten, role: u.role, roleVN: { NV: 'Nhân viên giao', BUU_CUC: 'Nhân viên bưu cục', AM: 'AM', QUAN_LY: 'Quản lý' }[u.role],
     hubs: u.role === 'QUAN_LY' ? [] : u.hubs, all: u.role === 'QUAN_LY', canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY',
-    authAt: (auth[u.ma] || {}).at || '', selfie: (auth[u.ma] || {}).selfie || '' });
+    authAt: (auth[u.ma] || {}).at || '', selfie: (auth[u.ma] || {}).selfie || '',
+    mods: u.role === 'QUAN_LY' ? { kiemke: 'edit', quahan: 'edit', congviec: 'edit', gtc: 'edit' } : Object.fromEntries(Object.keys(perm).map(k => [k, { 'Không': 'none', 'Xem': 'view', 'Sửa': 'edit' }[perm[k][u.role]]])) });
+  const perm = store.get('demo_perm', { kiemke: { NV: 'Sửa', BUU_CUC: 'Sửa', AM: 'Sửa' }, quahan: { NV: 'Không', BUU_CUC: 'Sửa', AM: 'Sửa' },
+    congviec: { NV: 'Sửa', BUU_CUC: 'Sửa', AM: 'Sửa' }, gtc: { NV: 'Không', BUU_CUC: 'Xem', AM: 'Xem' } });
+  const QHS = [['GAN_LAI', 'Đã gán lại cho NV giao', 'go'], ['DANG_GIAO', 'Đang giao lại hôm nay', 'go'], ['DA_GIAO', 'Đã giao thành công', 'ok'],
+    ['HEN_NGAY', 'Khách hẹn ngày giao', 'wait', 'date'], ['KHONG_LIEN_LAC', 'Không liên lạc được khách', 'bad'], ['SAI_DIA_CHI', 'Sai / thiếu địa chỉ - chờ xác nhận', 'bad'],
+    ['KHACH_TU_CHOI', 'Khách từ chối nhận - chờ chuyển hoàn', 'bad'], ['CHO_SHOP', 'Chờ shop / khách xử lý', 'wait'], ['DA_DUYET_HOAN', 'Đã duyệt hoàn / đang trả hàng', 'ok'],
+    ['HU_HONG', 'Hàng hư hỏng / thất lạc - đã báo cáo', 'bad', 'note'], ['KHAC', 'Khác', 'wait', 'note']].map(x => ({ code: x[0], name: x[1], tone: x[2], need: x[3] }));
+  const qhLogs = store.get('demo_qh', {});
+  const qhRow = (hub, order, customer, group, backlog, status, att, fails, driver) => ({ hub, hubName: (hubs.find(h => h.code === hub) || {}).name, order, customer, group, backlog,
+    status, cur: hub, deliver: hub, value: 1500000 + order.length * 120000, attempts: att, fails, driver, last: 'Cập nhật đơn - giao thất bại | 29/10 18:30 | ' + driver.replace(/\s*\(.*\)$/, ''), ghnAt: '18:40' });
+  const qhOrders = [
+    qhRow('20507000', 'GYM4GG6U', 'OTHER', 'DELIVERING', '96_120', 'Giao thất bại', 2, 'Lần 1 (27/10 10:00): Khách hẹn\nLần 2 (29/10 10:00): Không nghe máy', 'Nguyễn Văn Thế (29/10 10:00)'),
+    qhRow('20507000', 'VNGH80023130611', 'TTS', 'DELIVERING_PRIORITY', '96_120', 'Đang giao', 1, '', 'Nguyễn Văn Thế (30/10 08:15)'),
+    qhRow('20507000', 'VNGH80565440617', 'TTS', 'DELIVERING_PRIORITY', '120_192', 'Lưu kho', 3, 'Lần 1: Sai địa chỉ\nLần 2: Không liên lạc được\nLần 3: Khách đi vắng', 'Nguyễn Văn Thế (28/10 16:40)'),
+    qhRow('22524000', 'GYMDRWNM', 'OTHER', 'DELIVERING', '120_192', 'Giao thất bại', 2, 'Lần 1: Khách từ chối nhận\nLần 2: Khách từ chối nhận', 'Trần Thị Thìn (29/10 15:20)'),
+    qhRow('22524000', 'GYMPFLUE', 'OTHER', 'DELIVER', '192_288', 'Chờ trả hàng', 4, 'Lần 1-4: Không liên lạc được người nhận', 'Hoàng Văn Hoan (30/10 09:00)')];
   const me = t => { const m = String(t || '').replace('demo-', ''), u = users[m];
     if (!u || !auth[m]) { const e = new Error('Phiên đăng nhập hết hạn'); e.auth = true; throw e; } return u; };
   const nowTxt = () => new Date().toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -390,6 +434,30 @@ const Demo = (function () {
       }
       const u = me(b.token), sc = scope(u);
       const mine = orders.filter(sc);
+      if (b.action === 'perms' || b.action === 'savePerms') {
+        if (u.role !== 'QUAN_LY') throw new Error('Chỉ quản lý được phân quyền');
+        if (b.action === 'savePerms') { Object.keys(b.perms).forEach(k => { perm[k] = b.perms[k]; }); store.set('demo_perm', perm); }
+        return { ok: true, levels: ['Không', 'Xem', 'Sửa'], roles: [['NV', 'Nhân viên giao'], ['BUU_CUC', 'Nhân viên bưu cục'], ['AM', 'AM'], ['QUAN_LY', 'Quản lý']].map(x => ({ code: x[0], name: x[1] })),
+          modules: [['kiemke', 'Kiểm kê COD'], ['quahan', 'Đơn quá hạn'], ['congviec', 'Công việc cần làm'], ['gtc', 'Báo cáo GTC']].map(x => ({ id: x[0], name: x[1], perm: Object.assign({ QUAN_LY: 'Sửa' }, perm[x[0]]) })) };
+      }
+      if (/^qh/.test(b.action)) {
+        const lv = pub(u).mods.quahan;
+        if (lv === 'none') throw new Error('Bạn chưa được cấp quyền module này');
+        const mineQ = qhOrders.filter(o => u.role === 'QUAN_LY' || u.hubs.indexOf(o.hub) >= 0);
+        const withLog = o => { const lg = qhLogs[o.order] || []; return Object.assign({}, o, { handle: lg[lg.length - 1] || null, logs: lg.slice().reverse() }); };
+        if (b.action === 'qhSave') {
+          if (lv !== 'edit') throw new Error('Bạn chỉ có quyền xem, không được cập nhật');
+          const st = QHS.find(x => x.code === b.status); if (!st) throw new Error('Chọn tình trạng xử lý');
+          if (st.need === 'date' && !b.date) throw new Error('Chọn ngày khách hẹn giao');
+          if (st.need === 'note' && !String(b.note || '').trim()) throw new Error('Ghi chú bắt buộc với tình trạng "' + st.name + '"');
+          (qhLogs[b.order] = qhLogs[b.order] || []).push({ time: nowTxt(), day: isoToVN(todayISO()), status: st.name, date: b.date ? b.date.split('-').reverse().join('/') : '',
+            note: b.note || '', by: u.ten, role: pub(u).roleVN }); store.set('demo_qh', qhLogs);
+          const o = withLog(mineQ.find(x => x.order === b.order)); return { ok: true, order: b.order, handle: o.handle, logs: o.logs };
+        }
+        if (b.action === 'qhRefresh' && b.order) { const o = withLog(mineQ.find(x => x.order === b.order)); return { ok: true, order: o, logs: o.logs, refresh: { checked: 1 } }; }
+        return { ok: true, srcAt: '30/10/2026 18:25:20', today: isoToVN(todayISO()), statuses: QHS, canEdit: lv === 'edit', orders: mineQ.map(withLog), refresh: { checked: 0, remain: 0 } };
+      }
+      if (b.action === 'me') return { ok: true, user: pub(u) };
       if (b.action === 'refresh') b.action = 'list';
       if (b.action === 'list') {
         const checked = {}, extra = [];
@@ -481,7 +549,8 @@ const Q = (function () {
 // TRANG THAI
 // =====================================================================
 const S = {
-  token: store.get('token', ''), user: store.get('user', null), tab: 'scan',
+  token: store.get('token', ''), user: store.get('user', null), tab: 'home',
+  qh: null, qhTab: 'todo', qhSearch: '', qhF: store.get('qhF', {}), qhFOpen: false, qhHub: store.get('qhHub', ''), qhAt: {}, qhBusy: false,
   data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false, odAt: {}, f: store.get('filters', {}), fOpen: false,
   scanner: null, scanning: false, torch: false, busy: false, cand: null,
   report: null, rep: { from: todayISO(), to: todayISO(), hub: '', group: 'hub', filter: 'miss' }, admin: null
@@ -493,7 +562,7 @@ const S = {
 function viewLogin(msg) {
   stopScan(); stopSelfie();
   $('#app').innerHTML = `<div class="login"><div class="card">
-    <h1>Kiểm kê COD</h1><p>Đăng nhập bằng mã nhân viên và mã 6 số trên ứng dụng Authenticator</p>
+    <h1>Vận hành bưu cục</h1><p>Đăng nhập bằng mã nhân viên và mã 6 số trên ứng dụng Authenticator</p>
     ${DEMO ? `<div class="demo"><b>Chế độ thử (demo)</b> — dữ liệu mẫu, không ghi Google Sheet.<br>
       Tài khoản: Quản lý <b>3172684</b> · Bưu cục <b>2000001</b> · NV giao <b>3179060</b> · AM <b>4000001</b>. Lần đầu bấm <b>Kích hoạt Authenticator</b>.<br>
       Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4</div>` : ''}
@@ -525,7 +594,7 @@ function viewLogin(msg) {
 }
 function loggedIn(r, ma) {
   S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.del('lastMa');
-  S.tab = 'scan'; shell(); loadList(); flush();
+  S.tab = 'home'; S.data = null; S.qh = null; shell(); flush();
 }
 
 // =====================================================================
@@ -668,26 +737,58 @@ function onApiError(e) { if (e.auth) { logout(); viewLogin(e.message); } else to
 // =====================================================================
 // KHUNG APP
 // =====================================================================
+// =====================================================================
+// KHUNG NHIEU MODULE: trang chu chon module, moi module co thanh dieu huong rieng
+// =====================================================================
+const MODS = {
+  kiemke: { name: 'Kiểm kê COD', icon: 'scan', desc: 'Quét tem đối chiếu đơn COD cao trong kho',
+    tabs: [['scan', 'Kiểm kê', 'scan', 'edit'], ['list', 'Danh sách', 'list'], ['report', 'Báo cáo', 'chart', 'report']] },
+  quahan: { name: 'Đơn quá hạn', icon: 'clock', desc: 'Theo dõi và cập nhật xử lý đơn tồn quá hạn', tabs: [['qh', 'Đơn quá hạn', 'clock']] },
+  congviec: { name: 'Công việc cần làm', icon: 'check', desc: 'AM giao việc, theo dõi hoàn thành', soon: true, tabs: [] },
+  gtc: { name: 'Báo cáo GTC', icon: 'chart', desc: 'Tỉ lệ giao thành công', soon: true, tabs: [] }
+};
+const TAB_MOD = { scan: 'kiemke', list: 'kiemke', report: 'kiemke', qh: 'quahan' };
+const modsOf = u => u.mods || { kiemke: 'edit' };
+function modTabs(m) {
+  const u = S.user, lv = modsOf(u)[m];
+  return MODS[m].tabs.filter(t => !t[3] || (t[3] === 'edit' ? lv === 'edit' : t[3] === 'report' ? u.canReport : true));
+}
 function shell() {
-  const u = S.user;
-  const tabs = [['scan', 'Kiểm kê', 'scan'], ['list', 'Danh sách', 'list']];
-  if (u.canReport) tabs.push(['report', 'Báo cáo', 'chart']);
-  if (u.canAdmin) tabs.push(['admin', 'Quản trị', 'users']);
+  const u = S.user, m = TAB_MOD[S.tab] || 'home';
+  const tabs = m === 'home' ? [['home', 'Trang chủ', 'grid']].concat(u.canAdmin ? [['admin', 'Quản trị', 'users']] : [])
+    : [['home', 'Module', 'grid']].concat(modTabs(m));
   tabs.push(['me', 'Tài khoản', 'me']);
   $('#app').innerHTML = `
-    <div class="top"><div class="top-in"><h1>Kiểm kê COD${DEMO ? ' · DEMO' : ''}</h1>
+    <div class="top"><div class="top-in"><h1>${m === 'home' ? 'Vận hành bưu cục' : esc(MODS[m].name)}${DEMO ? ' · DEMO' : ''}</h1>
       <div class="who"><div>${esc(u.ten)}</div><div>${esc(u.roleVN)} <span class="badge" id="pendBadge" hidden></span></div></div></div></div>
     <main id="view"></main>
     <nav class="nav"><div class="nav-in">${tabs.map(t => `<button data-tab="${t[0]}">${svg(t[2])}<span>${t[1]}</span></button>`).join('')}</div></nav>`;
+  S.shellMod = m;
   document.querySelectorAll('.nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
   go(S.tab);
 }
 function go(tab) {
   if (tab !== 'scan') stopScan();
+  const m = TAB_MOD[tab] || 'home';
+  if (m !== 'home' && (modsOf(S.user)[m] || 'none') === 'none') { toast('Bạn chưa được cấp quyền module này'); tab = 'home'; }
+  if ((TAB_MOD[tab] || 'home') !== S.shellMod && tab !== 'me' && tab !== 'admin') { S.tab = tab; return shell(); }
   S.tab = tab;
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ({ scan: viewScan, list: viewList, report: viewReport, admin: viewAdmin, me: viewMe })[tab]();
+  if (TAB_MOD[tab] === 'kiemke' && !S.data) loadList(true);
+  ({ home: viewHome, scan: viewScan, list: viewList, report: viewReport, admin: viewAdmin, me: viewMe, qh: viewQh })[tab]();
   window.scrollTo(0, 0);
+}
+function viewHome() {
+  const u = S.user, mods = modsOf(u);
+  const list = Object.keys(MODS).filter(k => (mods[k] || 'none') !== 'none');
+  $('#view').innerHTML = `<div class="hello">Xin chào <b>${esc(u.ten)}</b><span>${esc(u.roleVN)}${u.all ? ' · tất cả bưu cục' : u.hubs && u.hubs.length ? ' · BC ' + esc(u.hubs.join(', ')) : ''}</span></div>
+    <div class="mods">${list.map(k => { const M = MODS[k];
+      return `<button class="mod${M.soon ? ' soon' : ''}" data-m="${k}"><i>${svg(M.icon)}</i><b>${esc(M.name)}</b><span>${esc(M.desc)}</span>
+        <em>${M.soon ? 'Sắp có' : mods[k] === 'edit' ? 'Xem + cập nhật' : 'Chỉ xem'}</em></button>`; }).join('') || '<div class="empty">Bạn chưa được cấp module nào. Liên hệ quản lý.</div>'}</div>`;
+  document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+    const M = MODS[b.dataset.m]; if (M.soon) { toast(M.name + ' đang được xây dựng'); return; }
+    const t = modTabs(b.dataset.m); go(t[0][0]);
+  });
 }
 function setPending(n) { S.pending = n; const b = $('#pendBadge'); if (b) { b.hidden = !n; b.textContent = n + ' chờ gửi'; } }
 
@@ -1315,14 +1416,35 @@ function exportCsv() {
 // =====================================================================
 async function viewAdmin() {
   $('#view').innerHTML = loader('Đang tải danh sách tài khoản', 8);
-  try { S.admin = await api('users'); } catch (e) { onApiError(e); return; }
+  try { [S.admin, S.perms] = await Promise.all([api('users'), api('perms')]); } catch (e) { onApiError(e); return; }
   renderAdmin();
+}
+// Bang phan quyen: vai tro x module (Khong / Xem / Sua)
+function permCard() {
+  const p = S.perms; if (!p) return '';
+  const roles = p.roles.filter(r => r.code !== 'QUAN_LY');
+  return `<div class="card"><div class="h2" style="margin-top:0">Phân quyền module</div>
+    <div class="hint" style="margin-bottom:10px"><b>Xem</b>: chỉ xem · <b>Sửa</b>: xem + cập nhật (quét kiểm kê, cập nhật xử lý…).
+      Phạm vi bưu cục vẫn theo vai trò. <b>Quản lý</b> luôn có toàn quyền.</div>
+    ${p.modules.map(m => `<div class="pmod"><b>${esc(m.name)}</b><div class="pgrid">${roles.map(r => `<label><span>${esc(r.name)}</span>
+      <select data-pm="${m.id}" data-pr="${r.code}">${p.levels.map(l => `<option${m.perm[r.code] === l ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div></div>`).join('')}
+    <button class="btn primary block" id="pmSave" style="margin-top:10px">Lưu phân quyền</button></div>`;
+}
+function bindPerm() {
+  const b = $('#pmSave'); if (!b) return;
+  b.onclick = async () => {
+    const perms = {};
+    document.querySelectorAll('[data-pm]').forEach(el => { (perms[el.dataset.pm] = perms[el.dataset.pm] || { QUAN_LY: 'Sửa' })[el.dataset.pr] = el.value; });
+    b.disabled = true;
+    try { S.perms = await api('savePerms', { perms }); toast('Đã lưu phân quyền. Người dùng mở lại app là có hiệu lực.'); }
+    catch (e) { toast(e.message, 5000); } finally { b.disabled = false; }
+  };
 }
 function renderAdmin(q) {
   const a = S.admin, rn = {}; a.roles.forEach(r => { rn[r.code] = r.name; });
   q = (q || '').toUpperCase();
   const us = a.users.filter(u => !q || (u.ma + ' ' + u.ten + ' ' + u.hubs.join(' ')).toUpperCase().indexOf(q) >= 0);
-  $('#view').innerHTML = `<div class="row" style="margin-bottom:10px"><input class="inp" id="aQ" placeholder="Tìm mã NV, tên, bưu cục…" value="${esc(q)}">
+  $('#view').innerHTML = `${permCard()}<div class="row" style="margin-bottom:10px"><input class="inp" id="aQ" placeholder="Tìm mã NV, tên, bưu cục…" value="${esc(q)}">
       <button class="btn primary" id="aNew" style="flex:none">+ Thêm</button></div>
     <div class="card" style="font-size:13px;color:var(--ink-2)"><b style="color:var(--ink)">Tài khoản nhân viên</b><br>
       Đăng nhập bằng <b>Authenticator</b>. Nhân viên có trong sheet <b>Nhansu</b> tự kích hoạt, bắt buộc <b>quay khuôn mặt</b> — bấm ảnh để đối chiếu đúng người.
@@ -1342,6 +1464,7 @@ function renderAdmin(q) {
         ${u.nsStatus ? `<span class="tag ${u.nsStatus === 'Đang làm việc' ? '' : 'miss'}">${esc(u.nsStatus)}</span>` : ''}</div></div></div>`).join('')}`;
   $('#aQ').oninput = e => { const v = e.target.value; renderAdmin(v); const i = $('#aQ'); i.focus(); i.setSelectionRange(v.length, v.length); };
   $('#aNew').onclick = () => userForm(null);
+  bindPerm();
   document.querySelectorAll('[data-u]').forEach(el => el.onclick = e => { if (e.target.closest('.thumb')) return; userForm(a.users.find(u => u.ma === el.dataset.u)); });
   loadThumbs();
 }
@@ -1392,6 +1515,154 @@ function userForm(u) {
 }
 
 // =====================================================================
+// MODULE DON QUA HAN
+// =====================================================================
+const blLabel = b => String(b || '').replace('_', '–') + (b ? 'h' : '');
+const blTone = b => { const n = parseInt(b, 10) || 0; return n >= 192 ? 'b3' : n >= 120 ? 'b2' : 'b1'; };
+const blTag = b => b ? `<span class="bl ${blTone(b)}">Quá ${esc(blLabel(b))}</span>` : '';
+function qhTone(name) { const st = ((S.qh || {}).statuses || []).find(x => x.name === name); return st ? st.tone : 'none'; }
+function hdTag(h) { return h ? `<span class="hd ${qhTone(h.status)}">${esc(h.status)}${h.date ? ' · ' + esc(h.date) : ''}</span>` : '<span class="hd none">Chưa xử lý</span>'; }
+const QH_F = [
+  { k: 'group', label: 'Nhóm đơn', val: o => o.group || '' },
+  { k: 'customer', label: 'Khách hàng', val: o => o.customer || '' },
+  { k: 'backlog', label: 'Backlog', val: o => o.backlog || '', name: v => v ? 'Quá ' + blLabel(v) : '(trống)' },
+  { k: 'status', label: 'Trạng thái GHN', val: o => o.status || '(chưa tra)' },
+  { k: 'handle', label: 'Tình trạng xử lý', val: o => o.handle ? o.handle.status : 'Chưa xử lý' },
+  { k: 'driver', label: 'NV giao gần nhất', val: o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ)' }
+];
+function qhPass(o, skip) { return (!S.qhHub || o.hub === S.qhHub) && QH_F.every(F => F.k === skip || !S.qhF[F.k] || F.val(o) === S.qhF[F.k]); }
+function qhCounts(list, today) {
+  const done = list.filter(o => o.handle), todayDone = done.filter(o => o.handle.day === today);
+  return { all: list.length, todo: list.length - done.length, today: todayDone.length, hen: done.filter(o => /hẹn/i.test(o.handle.status)).length };
+}
+async function viewQh() {
+  if (!S.qh) {
+    $('#view').innerHTML = loader('Đang tải danh sách đơn quá hạn', 6);
+    try { S.qh = await api('qhList'); } catch (e) { onApiError(e); return; }
+    if (S.tab !== 'qh') return;
+    renderQh(); qhRefreshAll();
+  } else renderQh();
+}
+async function qhRefreshAll() {
+  if (S.qhBusy || DEMO) return;
+  S.qhBusy = true; paintQhRefresh();
+  try {
+    for (let i = 0; i < 8; i++) {
+      const r = await api('qhRefresh'); S.qh = r;
+      const t = Date.now(); if (!r.refresh || !r.refresh.remain) { r.orders.forEach(o => { S.qhAt[o.order] = t; }); }
+      if (S.tab === 'qh') renderQh();
+      if (!r.refresh || !r.refresh.remain) break;
+    }
+  } catch (e) { if (e.auth) onApiError(e); }
+  finally { S.qhBusy = false; paintQhRefresh(); }
+}
+function paintQhRefresh() { const el = $('#qhLive'); if (el) el.innerHTML = S.qhBusy ? loader('Đang cập nhật trạng thái đơn từ GHN', 25, true, 'qhghn') : ''; }
+function renderQh() {
+  const d = S.qh; if (!d || !$('#view')) return;
+  const hubsM = {}; d.orders.forEach(o => { const h = hubsM[o.hub] = hubsM[o.hub] || { code: o.hub, name: o.hubName, n: 0, todo: 0 }; h.n++; if (!o.handle) h.todo++; });
+  const hubs = Object.values(hubsM).sort((a, b) => b.todo - a.todo);
+  const base = d.orders.filter(o => qhPass(o)), c = qhCounts(base, d.today);
+  const q = S.qhSearch.trim().toUpperCase();
+  const tabF = { todo: o => !o.handle, today: o => o.handle && o.handle.day === d.today, hen: o => o.handle && /hẹn/i.test(o.handle.status), all: () => true }[S.qhTab];
+  const xs = base.filter(tabF).filter(o => !q || [o.order, o.customer, o.group, o.driver, o.hub, o.hubName, o.status].join(' ').toUpperCase().indexOf(q) >= 0)
+    .sort((a, b) => (parseInt(b.backlog, 10) || 0) - (parseInt(a.backlog, 10) || 0));
+  const nf = QH_F.filter(F => S.qhF[F.k]).length;
+  const fpanel = QH_F.map(F => {
+    const m = {}; d.orders.filter(o => qhPass(o, F.k)).forEach(o => { const v = F.val(o); m[v] = (m[v] || 0) + 1; });
+    const keys = Object.keys(m).sort((a, b) => m[b] - m[a]);
+    if (S.qhF[F.k] && !m[S.qhF[F.k]]) keys.unshift(S.qhF[F.k]);
+    return `<div class="fld"><label>${F.label}</label><select data-qf="${F.k}"><option value="">Tất cả</option>${keys.map(v =>
+      `<option value="${esc(v)}"${S.qhF[F.k] === v ? ' selected' : ''}>${esc(F.name ? F.name(v) : v)} (${m[v] || 0})</option>`).join('')}</select></div>`;
+  }).join('');
+  $('#view').innerHTML = `
+    ${hubs.length > 1 || S.qhHub ? `<div class="hubsel"><label for="qhHub">Bưu cục</label><select id="qhHub"><option value="">Tất cả ${hubs.length} bưu cục</option>${hubs.map(h =>
+      `<option value="${esc(h.code)}"${h.code === S.qhHub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (chưa xử lý ${h.todo}/${h.n})</option>`).join('')}</select></div>` : ''}
+    <div class="stats">
+      <button class="stat${S.qhTab === 'all' ? ' on' : ''}" data-qt="all"><b class="num">${c.all}</b><span>Quá hạn</span></button>
+      <button class="stat miss${S.qhTab === 'todo' ? ' on' : ''}" data-qt="todo"><b class="num">${c.todo}</b><span>Chưa xử lý</span></button>
+      <button class="stat ok${S.qhTab === 'today' ? ' on' : ''}" data-qt="today"><b class="num">${c.today}</b><span>Xử lý hôm nay</span></button>
+      <button class="stat bad${S.qhTab === 'hen' ? ' on' : ''}" data-qt="hen"><b class="num">${c.hen}</b><span>Hẹn giao</span></button></div>
+    <div class="bar"><i style="width:${c.all ? (c.all - c.todo) / c.all * 100 : 0}%"></i></div>
+    <div id="qhLive" class="refreshline"></div>
+    <div class="hint" style="margin:-4px 0 8px">Dữ liệu quá hạn cập nhật ${esc(d.srcAt || '—')}${d.canEdit ? '' : ' · bạn chỉ có quyền xem'}</div>
+    <div class="fbar"><button class="chip${nf ? ' on' : ''}" id="qfTog">Bộ lọc${nf ? ' · ' + nf : ''} ${S.qhFOpen ? '▲' : '▼'}</button>
+      ${nf ? `<button class="chip" id="qfClr">Xoá lọc</button>` : ''}<button class="chip" id="qhReload">Tải lại</button></div>
+    ${S.qhFOpen ? `<div class="fpanel">${fpanel}</div>` : ''}
+    <input class="inp" id="qhQ" placeholder="Tìm mã đơn, khách hàng, NV giao…" value="${esc(S.qhSearch)}" style="margin-bottom:10px">
+    <div class="h2"><span>${{ todo: 'Chưa xử lý', today: 'Đã xử lý hôm nay', hen: 'Khách hẹn giao', all: 'Tất cả đơn quá hạn' }[S.qhTab]}</span><small>${xs.length} đơn</small></div>
+    <div id="qhItems">${xs.slice(0, 500).map(o => `<div class="order click ${o.handle ? 'ok' : 'miss'}" data-q="${esc(o.order)}"><div class="body">
+      <div class="o1"><span class="ocode">${esc(o.order)}</span>${blTag(o.backlog)}</div>
+      <div class="sub">${esc(o.customer)} · ${esc(o.group)}</div>
+      <div class="sub"><span class="hubtag">${hubLabel(o)}</span></div>
+      <div class="sub" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">${stTag(o.status)}${o.attempts !== '' && o.attempts != null ? '<span>giao ' + esc(o.attempts) + ' lần</span>' : ''}${o.driver ? '<span>· ' + esc(o.driver.replace(/\s*\(.*\)$/, '')) + '</span>' : ''}</div>
+      <div style="margin-top:6px">${hdTag(o.handle)}${o.handle ? ` <span class="sub">${esc(o.handle.by)} · ${esc(o.handle.time)}</span>` : ''}</div></div></div>`).join('') || '<div class="empty">Không có đơn nào</div>'}</div>`;
+  paintQhRefresh();
+  const hs = $('#qhHub'); if (hs) hs.onchange = () => { S.qhHub = hs.value; store.set('qhHub', S.qhHub); renderQh(); };
+  document.querySelectorAll('[data-qt]').forEach(b => b.onclick = () => { S.qhTab = b.dataset.qt; renderQh(); });
+  $('#qfTog').onclick = () => { S.qhFOpen = !S.qhFOpen; renderQh(); };
+  const cl = $('#qfClr'); if (cl) cl.onclick = () => { S.qhF = {}; store.set('qhF', S.qhF); renderQh(); };
+  $('#qhReload').onclick = async () => { S.qh = null; S.qhAt = {}; await viewQh(); };
+  document.querySelectorAll('[data-qf]').forEach(el => el.onchange = () => { if (el.value) S.qhF[el.dataset.qf] = el.value; else delete S.qhF[el.dataset.qf]; store.set('qhF', S.qhF); renderQh(); });
+  $('#qhQ').oninput = e => { S.qhSearch = e.target.value; const pos = e.target.selectionStart; renderQh(); const i = $('#qhQ'); i.focus(); i.setSelectionRange(pos, pos); };
+  document.querySelectorAll('[data-q]').forEach(el => el.onclick = () => qhOpen(el.dataset.q));
+}
+function qhOpen(code, again) {
+  const d = S.qh; const o = d && d.orders.find(x => x.order === code); if (!o) return;
+  const old = document.querySelector('.sheet-bg.center[data-qorder]'); if (old) old.remove();
+  const fresh = again || DEMO || (S.qhAt[code] && Date.now() - S.qhAt[code] < 180000);
+  const off = o.cur && o.cur !== o.hub;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg center' + (again ? ' noanim' : ''); bg.dataset.qorder = code;
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
+    <div class="odlive">${fresh ? (o.ghnAt ? 'Cập nhật từ GHN lúc ' + esc(o.ghnAt) : '') : loader('Đang lấy trạng thái mới nhất từ GHN', 4, true, 'qh_' + code)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}${blTag(o.backlog)}${hdTag(o.handle)}</div>
+    <dl class="od">
+      <dt>Khách hàng</dt><dd>${esc(o.customer || '—')} · ${esc(o.group || '')}</dd>
+      <dt>Giá trị hàng</dt><dd class="num" style="color:var(--brand);font-weight:700">${o.value ? money(o.value) + ' đ' : '—'}</dd>
+      <dt>Số lần giao</dt><dd>${o.attempts !== '' && o.attempts != null ? esc(o.attempts) + ' lần' : '—'}</dd>
+      <dt>Lý do giao thất bại</dt><dd>${o.fails ? `<div class="fails">${esc(o.fails)}</div>` : '—'}</dd>
+      <dt>NV giao gần nhất</dt><dd>${esc(o.driver || '—')}</dd>
+      <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
+      <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}${o.deliver && o.deliver !== o.hub ? '<br><span class="sub">Kho giao: ' + esc(o.deliver) + '</span>' : ''}</dd>
+      <dt>Thao tác cuối</dt><dd>${esc(o.last || '—')}</dd>
+    </dl>
+    ${d.canEdit ? `<form class="qform" id="qf"><b style="display:block;margin-bottom:8px">Cập nhật xử lý</b>
+      <select id="qfS" required><option value="">— Chọn tình trạng xử lý —</option>${d.statuses.map(x => `<option value="${x.code}" data-need="${x.need || ''}">${esc(x.name)}</option>`).join('')}</select>
+      <input type="date" id="qfD" hidden>
+      <textarea id="qfN" placeholder="Ghi chú (gán cho ai, hẹn khách mấy giờ…)"></textarea>
+      <div class="err" id="qfE"></div><button class="btn primary block" id="qfB">Lưu xử lý</button></form>` : ''}
+    <div class="h2" style="margin-top:4px">Lịch sử xử lý<small>${(o.logs || []).length}</small></div>
+    ${(o.logs || []).map(l => `<div class="qlog"><b>${esc(l.status)}${l.date ? ' · hẹn ' + esc(l.date) : ''}</b><span>${esc(l.by)} · ${esc(l.role || '')} · ${esc(l.time)}</span>${l.note ? '<span>' + esc(l.note) + '</span>' : ''}</div>`).join('') || '<div class="hint">Chưa có ai cập nhật.</div>'}
+    <button class="btn light block" data-close style="margin-top:10px">Đóng</button></div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = e => { if (e.target === bg) close(); };
+  bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
+  const f = bg.querySelector('#qf');
+  if (f) {
+    const sel = f.querySelector('#qfS'), dt = f.querySelector('#qfD');
+    sel.onchange = () => { const need = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.need; dt.hidden = need !== 'date';
+      f.querySelector('#qfN').placeholder = need === 'note' ? 'Ghi chú (bắt buộc)' : 'Ghi chú (gán cho ai, hẹn khách mấy giờ…)'; };
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const btn = f.querySelector('#qfB'); btn.disabled = true; f.querySelector('#qfE').textContent = 'Đang lưu…';
+      try {
+        const r = await api('qhSave', { order: code, status: sel.value, date: dt.value, note: f.querySelector('#qfN').value });
+        o.handle = r.handle; o.logs = r.logs; toast('Đã lưu xử lý đơn ' + code);
+        renderQh(); qhOpen(code, true);
+      } catch (err) { f.querySelector('#qfE').textContent = err.message; btn.disabled = false; }
+    };
+  }
+  if (fresh) return;
+  api('qhRefresh', { order: code }).then(r => {
+    S.qhAt[code] = Date.now();
+    if (r.order) Object.assign(o, r.order);
+    if (r.logs) o.logs = r.logs, o.handle = r.logs[0] || o.handle;
+    if (S.tab === 'qh') renderQh();
+    if (document.body.contains(bg)) qhOpen(code, true);
+  }).catch(() => { const el = bg.querySelector('.odlive'); if (el) el.textContent = 'Chưa lấy được dữ liệu mới từ GHN — đang hiện dữ liệu gần nhất.'; });
+}
+
+// =====================================================================
 // TRANG TAI KHOAN
 // =====================================================================
 function viewMe() {
@@ -1414,7 +1685,12 @@ function viewMe() {
 // KHOI DONG
 // =====================================================================
 if (qs.get('api')) history.replaceState(null, '', location.pathname + (qs.get('demo') ? '?demo=1' : ''));
-if (S.token && S.user) { shell(); loadList(); flush(); } else if (resumeEN()) renderEnroll(); else viewLogin();
+if (S.token && S.user) {
+  S.tab = 'home'; shell(); flush();
+  // Lay lai quyen module moi nhat (quan ly vua doi phan quyen)
+  api('me').then(r => { const changed = JSON.stringify(r.user.mods) !== JSON.stringify(S.user.mods);
+    S.user = r.user; store.set('user', r.user); if (changed) shell(); }).catch(e => { if (e.auth) onApiError(e); });
+} else if (resumeEN()) renderEnroll(); else viewLogin();
 })();
 </script>
 </body>

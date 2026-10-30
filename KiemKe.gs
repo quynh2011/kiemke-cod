@@ -117,13 +117,21 @@ function kkHandle_(b) {
     if (a === 'enrollFinish') return kkEnrollFinish_(b);
     const me = kkAuth_(b.token);
     if (a === 'me') return { ok: true, user: kkPublicUser_(me) };
-    if (a === 'list') return kkList_(me);
-    if (a === 'refresh') return kkRefreshMine_(me, b);
-    if (a === 'scan') return kkScan_(me, b);
-    if (a === 'report') return kkReport_(me, b);
     if (a === 'photo') return kkPhoto_(me, b);
     if (a === 'users') return kkUsers_(me);
     if (a === 'saveUser') return kkSaveUser_(me, b);
+    if (a === 'perms') return kkPermsGet_(me);
+    if (a === 'savePerms') return kkPermsSave_(me, b);
+    // Module Kiem ke COD
+    if (a === 'list') { kkNeed_(me, 'kiemke', 'view'); return kkList_(me); }
+    if (a === 'refresh') { kkNeed_(me, 'kiemke', 'view'); return kkRefreshMine_(me, b); }
+    if (a === 'scan') { kkNeed_(me, 'kiemke', 'edit'); return kkScan_(me, b); }
+    if (a === 'report') { kkNeed_(me, 'kiemke', 'view'); return kkReport_(me, b); }
+    // Module Don qua han (file QuaHan.gs)
+    if (/^qh/.test(a)) {
+      if (typeof qhHandle_ !== 'function') throw new Error('Chưa cài module Đơn quá hạn (thêm file QuaHan.gs vào Apps Script)');
+      return qhHandle_(me, a, b);
+    }
     return { ok: false, error: 'Thao tác không hợp lệ' };
   } catch (err) {
     return { ok: false, error: String(err && err.message || err), auth: !!(err && err.auth), needSetup: !!(err && err.needSetup) };
@@ -439,11 +447,78 @@ function kkB32Decode_(s) {
   return out;
 }
 
+// ================================================================
+// MODULE + PHAN QUYEN THEO MODULE (sheet KK_PhanQuyen: vai tro x module = Không / Xem / Sửa)
+// ================================================================
+const KK_MODULES = [
+  { id: 'kiemke', name: 'Kiểm kê COD', def: { NV: 'Sửa', BUU_CUC: 'Sửa', AM: 'Sửa', QUAN_LY: 'Sửa' } },
+  { id: 'quahan', name: 'Đơn quá hạn', def: { NV: 'Không', BUU_CUC: 'Sửa', AM: 'Sửa', QUAN_LY: 'Sửa' } },
+  { id: 'congviec', name: 'Công việc cần làm', def: { NV: 'Sửa', BUU_CUC: 'Sửa', AM: 'Sửa', QUAN_LY: 'Sửa' } },
+  { id: 'gtc', name: 'Báo cáo GTC', def: { NV: 'Không', BUU_CUC: 'Xem', AM: 'Xem', QUAN_LY: 'Xem' } }
+];
+const KK_SH_PERM = 'KK_PhanQuyen';
+const KK_PERM_HEADERS = ['Module', 'Tên module', 'NV', 'BUU_CUC', 'AM', 'QUAN_LY'];
+const KK_PERM_LEVEL = { 'Không': 'none', 'Xem': 'view', 'Sửa': 'edit' };
+
+function kkPermTable_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('kkperm');
+  if (hit) return JSON.parse(hit);
+  const sh = kkSheet_(KK_SH_PERM, KK_PERM_HEADERS);
+  const have = {};
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, KK_PERM_HEADERS.length).getDisplayValues().forEach(function (r) {
+    if (r[0]) have[String(r[0]).trim()] = { NV: r[2], BUU_CUC: r[3], AM: r[4], QUAN_LY: r[5] };
+  });
+  // Module moi chua co trong sheet -> them dong voi quyen mac dinh
+  const add = KK_MODULES.filter(function (m) { return !have[m.id]; });
+  if (add.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, add.length, KK_PERM_HEADERS.length)
+      .setValues(add.map(function (m) { return [m.id, m.name, m.def.NV, m.def.BUU_CUC, m.def.AM, m.def.QUAN_LY]; }));
+    add.forEach(function (m) { have[m.id] = Object.assign({}, m.def); });
+  }
+  cache.put('kkperm', JSON.stringify(have), 300);
+  return have;
+}
+// Quyen cua 1 tai khoan: { kiemke: 'edit', quahan: 'view', ... }. Quan ly luon co toan quyen (khong tu khoa minh).
+function kkMods_(u) {
+  const t = kkPermTable_(), out = {};
+  KK_MODULES.forEach(function (m) {
+    out[m.id] = u.role === 'QUAN_LY' ? 'edit' : (KK_PERM_LEVEL[String((t[m.id] || m.def)[u.role] || '').trim()] || 'none');
+  });
+  return out;
+}
+function kkNeed_(u, mod, level) {
+  const have = kkMods_(u)[mod] || 'none';
+  if (have === 'none' || (level === 'edit' && have !== 'edit')) {
+    throw new Error(have === 'none' ? 'Bạn chưa được cấp quyền module này' : 'Bạn chỉ có quyền xem, không được cập nhật');
+  }
+}
+function kkPermsGet_(me) {
+  if (me.role !== 'QUAN_LY') throw new Error('Chỉ quản lý được phân quyền');
+  const t = kkPermTable_();
+  return { ok: true, roles: KK_ROLES.map(function (r) { return { code: r, name: KK_ROLE_VN[r] }; }), levels: ['Không', 'Xem', 'Sửa'],
+    modules: KK_MODULES.map(function (m) { return { id: m.id, name: m.name, perm: t[m.id] || m.def }; }) };
+}
+function kkPermsSave_(me, b) {
+  if (me.role !== 'QUAN_LY') throw new Error('Chỉ quản lý được phân quyền');
+  const sh = kkSheet_(KK_SH_PERM, KK_PERM_HEADERS);
+  kkPermTable_();
+  const v = sh.getRange(2, 1, sh.getLastRow() - 1, KK_PERM_HEADERS.length).getValues();
+  const want = b.perms || {};
+  v.forEach(function (r) {
+    const p = want[String(r[0]).trim()]; if (!p) return;
+    ['NV', 'BUU_CUC', 'AM', 'QUAN_LY'].forEach(function (role, i) { if (KK_PERM_LEVEL[p[role]]) r[2 + i] = p[role]; });
+  });
+  sh.getRange(2, 1, v.length, KK_PERM_HEADERS.length).setValues(v);
+  CacheService.getScriptCache().remove('kkperm');
+  return kkPermsGet_(me);
+}
+
 function kkPublicUser_(u) {
   const sc = kkScope_(u);
   return { ma: u.ma, ten: u.ten, role: u.role, roleVN: KK_ROLE_VN[u.role] || u.role,
     hubs: sc.all ? [] : Object.keys(sc.hubs), all: sc.all, canReport: u.role !== 'NV', canAdmin: u.role === 'QUAN_LY',
-    authAt: u.auth || '', selfie: u.selfie || '' };
+    authAt: u.auth || '', selfie: u.selfie || '',
+    mods: kkMods_(u), modules: KK_MODULES.map(function (m) { return { id: m.id, name: m.name }; }) };
 }
 
 // Danh sach buu cuc tu Cauhinh: { code: {name, amId, amName} } (tim cot theo tieu de)
@@ -907,7 +982,9 @@ function kkSaveUser_(me, b) {
 // ================================================================
 function KKSetup() {
   [[KK_SH_USERS, KK_USER_HEADERS], [KK_SH_LIST, KK_LIST_HEADERS], [KK_SH_RESULT, KK_RESULT_HEADERS], [KK_SH_REPORT, KK_REPORT_HEADERS],
-    [KK_SH_VERIFY, KK_VERIFY_HEADERS]].forEach(function (x) { kkEnsureHeaders_(kkSheet_(x[0], x[1]), x[1]); });
+    [KK_SH_VERIFY, KK_VERIFY_HEADERS], [KK_SH_PERM, KK_PERM_HEADERS]].forEach(function (x) { kkEnsureHeaders_(kkSheet_(x[0], x[1]), x[1]); });
+  kkPermTable_();
+  if (typeof QHSetup === 'function') QHSetup();
   kkSecret_();
   if (!kkReadUsers_().some(function (u) { return u.ma === KK_ADMIN.ma; })) {
     const sh = kkSheet_(KK_SH_USERS, KK_USER_HEADERS);

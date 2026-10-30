@@ -33,6 +33,17 @@ Khi đó app chạy **thẳng từ link `/exec`** của Apps Script:
 
 `KiemKeApp.html` là bản gộp của `index.html` (thư viện quét lấy từ CDN). Sửa `index.html` thì tạo lại file này.
 
+## Module
+
+Đăng nhập xong vào **Trang chủ** chọn module. Quyền từng module theo sheet **KK_PhanQuyen** (vai trò × module = Không / Xem / Sửa), quản lý chỉnh trong tab Quản trị.
+
+| Module | File Apps Script | Sheet dữ liệu |
+|---|---|---|
+| Kiểm kê COD | `KiemKe.gs` | Data → KK_DanhSach, KK_KetQua, KK_BaoCao |
+| Đơn quá hạn | `QuaHan.gs` | **Quahan** (nguồn) → QH_ChiTiet (tra GHN), QH_XuLy (lịch sử xử lý) |
+| Công việc cần làm | (sắp có) | |
+| Báo cáo GTC | (sắp có) | |
+
 ## Cấu trúc
 
 | File | Đặt ở đâu |

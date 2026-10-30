@@ -12,7 +12,7 @@
  *   KK_GAS_URL   link /exec cua Web App Apps Script (bat buoc)
  * ========================================================================== */
 'use strict';
-const ACTIONS = new Set(['login', 'enrollStart', 'enrollFinish', 'me', 'list', 'refresh', 'scan', 'report', 'photo', 'users', 'saveUser']);
+const ACTIONS = new Set(['login', 'enrollStart', 'enrollFinish', 'perms', 'savePerms', 'qhList', 'qhRefresh', 'qhSave', 'me', 'list', 'refresh', 'scan', 'report', 'photo', 'users', 'saveUser']);
 const MAX_BODY = 4 * 1024 * 1024;
 
 let cachedToken = null;

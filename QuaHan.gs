@@ -1,0 +1,214 @@
+/**
+ * ================================================================
+ * MODULE: DON QUA HAN  (dat cung project voi KiemKe.gs + COD_check.gs)
+ * ----------------------------------------------------------------
+ * Nguon: sheet "Quahan" (Ma buu cuc | Ma don hang | Khach hang | Nhom don | Backlog | Cap nhat) - tim cot theo tieu de
+ * Chi tiet don: tra GHN (common-info + lich su don) bang ham cua COD_check.gs -> luu sheet QH_ChiTiet
+ *   trang thai, kho hien tai, kho giao, gia tri hang, so lan giao, ly do giao that bai, NV giao gan nhat, thao tac cuoi
+ * Xu ly: NV buu cuc / AM chon tinh trang xu ly -> ghi sheet QH_XuLy (moi lan 1 dong, giu lich su)
+ * Quyen: theo bang KK_PhanQuyen (module "quahan"); pham vi buu cuc giong module Kiem ke
+ * ================================================================
+ */
+const QH_SRC = 'Quahan';
+const QH_SH_DETAIL = 'QH_ChiTiet';
+const QH_SH_LOG = 'QH_XuLy';
+const QH_DETAIL_HEADERS = ['Mã đơn', 'Mã bưu cục', 'Trạng thái', 'Kho hiện tại', 'Kho giao', 'Giá trị hàng', 'Số lần giao',
+  'Lý do giao thất bại', 'NV giao gần nhất', 'Thao tác cuối', 'Cập nhật GHN lúc'];
+const QH_LOG_HEADERS = ['Thời gian', 'Mã bưu cục', 'Mã đơn', 'Tình trạng xử lý', 'Hẹn ngày', 'Ghi chú', 'Mã người cập nhật',
+  'Tên người cập nhật', 'Vai trò'];
+// Tinh trang xu ly NVXL chon (need: 'date' = bat buoc chon ngay hen, 'note' = bat buoc ghi chu)
+const QH_STATUSES = [
+  { code: 'GAN_LAI', name: 'Đã gán lại cho NV giao', tone: 'go' },
+  { code: 'DANG_GIAO', name: 'Đang giao lại hôm nay', tone: 'go' },
+  { code: 'DA_GIAO', name: 'Đã giao thành công', tone: 'ok' },
+  { code: 'HEN_NGAY', name: 'Khách hẹn ngày giao', tone: 'wait', need: 'date' },
+  { code: 'KHONG_LIEN_LAC', name: 'Không liên lạc được khách', tone: 'bad' },
+  { code: 'SAI_DIA_CHI', name: 'Sai / thiếu địa chỉ - chờ xác nhận', tone: 'bad' },
+  { code: 'KHACH_TU_CHOI', name: 'Khách từ chối nhận - chờ chuyển hoàn', tone: 'bad' },
+  { code: 'CHO_SHOP', name: 'Chờ shop / khách xử lý', tone: 'wait' },
+  { code: 'DA_DUYET_HOAN', name: 'Đã duyệt hoàn / đang trả hàng', tone: 'ok' },
+  { code: 'HU_HONG', name: 'Hàng hư hỏng / thất lạc - đã báo cáo', tone: 'bad', need: 'note' },
+  { code: 'KHAC', name: 'Khác', tone: 'wait', need: 'note' }
+];
+const QH_FRESH_SEC = 180;      // don vua tra GHN trong 3 phut -> khong tra lai
+const QH_MAX_PER_CALL = 100;   // so don toi da tra trong 1 lan goi tu app
+
+function qhHandle_(me, a, b) {
+  if (a === 'qhList') { kkNeed_(me, 'quahan', 'view'); return qhList_(me); }
+  if (a === 'qhRefresh') { kkNeed_(me, 'quahan', 'view'); return qhRefresh_(me, b); }
+  if (a === 'qhSave') { kkNeed_(me, 'quahan', 'edit'); return qhSave_(me, b); }
+  return { ok: false, error: 'Thao tác không hợp lệ' };
+}
+
+function QHSetup() {
+  kkEnsureHeaders_(kkSheet_(QH_SH_DETAIL, QH_DETAIL_HEADERS), QH_DETAIL_HEADERS);
+  kkEnsureHeaders_(kkSheet_(QH_SH_LOG, QH_LOG_HEADERS), QH_LOG_HEADERS);
+  console.log('[QuaHan] Da tao sheet ' + QH_SH_DETAIL + ', ' + QH_SH_LOG);
+}
+
+// Doc sheet Quahan (tim cot theo tieu de, khong co dinh vi tri)
+function qhSource_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(QH_SRC);
+  if (!sh || sh.getLastRow() < 2) return { rows: [], at: '' };
+  const v = sh.getDataRange().getDisplayValues();
+  const head = v[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const col = function (names) { for (let i = 0; i < names.length; i++) { const k = head.indexOf(names[i]); if (k >= 0) return k; } return -1; };
+  const c = { hub: col(['mã bưu cục', 'bưu cục']), order: col(['mã đơn hàng', 'mã đơn']), cust: col(['khách hàng']),
+    group: col(['nhóm đơn']), backlog: col(['backlog']), at: col(['cập nhật']) };
+  if (c.order < 0 || c.hub < 0) throw new Error('Sheet Quahan thiếu cột "Mã bưu cục" / "Mã đơn hàng"');
+  const g = function (r, k) { return c[k] >= 0 ? String(r[c[k]]).trim() : ''; };
+  const seen = {}, rows = [];
+  let at = '';
+  v.slice(1).forEach(function (r) {
+    const order = g(r, 'order').toUpperCase(), hub = g(r, 'hub');
+    if (!order || seen[hub + '|' + order]) return;
+    seen[hub + '|' + order] = true;
+    if (g(r, 'at') > at) at = g(r, 'at');
+    rows.push({ hub: hub, order: order, customer: g(r, 'cust'), group: g(r, 'group'), backlog: g(r, 'backlog'), srcAt: g(r, 'at') });
+  });
+  return { rows: rows, at: at };
+}
+
+function qhDetailMap_() {
+  const sh = kkSheet_(QH_SH_DETAIL, QH_DETAIL_HEADERS), out = {};
+  if (sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, QH_DETAIL_HEADERS.length).getValues().forEach(function (r, i) {
+    out[String(r[0]).trim()] = { row: i + 2, status: r[2], cur: String(r[3]), deliver: String(r[4]), value: Number(r[5]) || 0,
+      attempts: r[6], fails: String(r[7] || ''), driver: String(r[8] || ''), last: String(r[9] || ''), at: kkTime_(r[10]) };
+  });
+  return out;
+}
+
+// Tinh trang xu ly moi nhat + lich su (doc toi da 5000 dong cuoi)
+function qhLogs_() {
+  const sh = kkSheet_(QH_SH_LOG, QH_LOG_HEADERS), last = sh.getLastRow(), by = {};
+  if (last < 2) return by;
+  const start = Math.max(2, last - 4999);
+  sh.getRange(start, 1, last - start + 1, QH_LOG_HEADERS.length).getValues().forEach(function (r) {
+    const k = String(r[2]).trim();
+    (by[k] = by[k] || []).push({ time: kkTime_(r[0]), status: String(r[3]), date: r[4] ? String(r[4]) : '', note: String(r[5] || ''),
+      byMa: String(r[6]), by: String(r[7]), role: String(r[8]), day: Utilities.formatDate(new Date(r[0]), Session.getScriptTimeZone(), 'dd/MM/yyyy') });
+  });
+  return by;
+}
+
+function qhList_(me) {
+  const sc = kkScope_(me), hubs = kkHubs_();
+  const src = qhSource_(), det = qhDetailMap_(), logs = qhLogs_();
+  const orders = src.rows.filter(function (o) { return sc.all || sc.hubs[o.hub]; }).map(function (o) {
+    const d = det[o.order] || {}, lg = logs[o.order] || [];
+    return Object.assign(o, { hubName: (hubs[o.hub] || {}).name || '', status: d.status || '', cur: d.cur || '', deliver: d.deliver || '',
+      value: d.value || 0, attempts: d.attempts === undefined ? '' : d.attempts, fails: d.fails || '', driver: d.driver || '', last: d.last || '',
+      ghnAt: d.at || '', handle: lg.length ? lg[lg.length - 1] : null, logs: lg.slice(-10).reverse() });
+  });
+  return { ok: true, srcAt: src.at, orders: orders, statuses: QH_STATUSES, canEdit: kkMods_(me).quahan === 'edit',
+    today: kkToday_(), statusAt: PropertiesService.getScriptProperties().getProperty('QH_STATUS_AT') || '' };
+}
+
+// Tra GHN cho don qua han trong pham vi. b.order = 1 don (popup, tra ngay). Con lai: bo qua don vua tra trong 3 phut.
+function qhRefresh_(me, b) {
+  if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') throw new Error('Cần file COD_check.gs trong cùng project để tra GHN');
+  const sc = kkScope_(me), one = String(b.order || '').trim().toUpperCase();
+  const cache = CacheService.getScriptCache();
+  let todo = qhSource_().rows.filter(function (o) { return (sc.all || sc.hubs[o.hub]) && (!one || o.order === one); });
+  if (!one && todo.length) {
+    const keys = todo.map(function (o) { return 'qho_' + o.order; }), hit = {};
+    for (let i = 0; i < keys.length; i += 500) Object.assign(hit, cache.getAll(keys.slice(i, i + 500)));
+    todo = todo.filter(function (o, i) { return !hit[keys[i]]; });
+  }
+  const remain = todo.length > QH_MAX_PER_CALL ? todo.length - QH_MAX_PER_CALL : 0;
+  todo = todo.slice(0, QH_MAX_PER_CALL);
+  if (!todo.length) return one ? { ok: true, order: null, refresh: { checked: 0, remain: 0 } } : Object.assign(qhList_(me), { refresh: { checked: 0, remain: 0 } });
+  const cfg = codReadConfig_(SpreadsheetApp.getActiveSpreadsheet());
+  if (typeof COD_CONC_ !== 'undefined' && !one) COD_CONC_ = Math.max(COD_CONC_ || 0, 12);
+  const ci = codFetchBatch_(todo.map(function (o) {
+    return { label: 'common-info ' + o.order, apiUrl: COD_CFG.URL_COMMON_INFO, headers: codHeaders_(cfg, o.hub), payload: { order_code: o.order } };
+  }));
+  // Lich su: chi hoi khi don thay doi (chu ky trang thai) hoac khi mo popup 1 don
+  const sig = {}, prev = cache.getAll(todo.map(function (o) { return 'qhsig_' + o.order; }));
+  todo.forEach(function (o, i) {
+    const d = ci[i].json && ci[i].json.data;
+    if (d) sig[o.order] = [d.partnerStatus, d.partnerAction, d.status, d.currentId].join('|');
+  });
+  const det = qhDetailMap_();
+  const needH = todo.filter(function (o) { return sig[o.order] && (one || prev['qhsig_' + o.order] !== sig[o.order] || !det[o.order]); });
+  const hr = needH.length ? codFetchBatch_(needH.map(function (o) {
+    return { label: 'get-order-history ' + o.order, apiUrl: COD_CFG.URL_HISTORY, headers: codHeaders_(cfg, o.hub),
+      payload: { orderCode: o.order, paging: { offset: 0, limit: 1000 } } };
+  })) : [];
+  const hist = {};
+  needH.forEach(function (o, i) { if (!hr[i].error && hr[i].json) hist[o.order] = ((hr[i].json.data || {}).data || []); });
+
+  const tz = Session.getScriptTimeZone(), now = new Date();
+  const recs = [], newSig = {}, fresh = {};
+  todo.forEach(function (o, i) {
+    const d = ci[i].json && ci[i].json.data;
+    if (!d) return;
+    const old = det[o.order] || {};
+    const rec = { order: o.order, hub: o.hub, status: kkStatusVN_(String(d.partnerStatus || '').toLowerCase()), cur: String(d.currentId || ''),
+      deliver: String(d.deliverId || ''), value: Number(d.orderValue) || 0, attempts: old.attempts === undefined ? '' : old.attempts,
+      fails: old.fails || '', driver: old.driver || '', last: old.last || '' };
+    const ev = hist[o.order];
+    if (ev && ev.length) {
+      const a = typeof codDeliveryAttempts_ === 'function' ? codDeliveryAttempts_(ev) : { count: '', fails: '' };
+      rec.attempts = a.count; rec.fails = a.fails;
+      const sorted = ev.slice().sort(function (x, y) { return new Date(x.createdTime) - new Date(y.createdTime); });
+      const dl = sorted.filter(function (e) { return e.historyType === 'UPDATE_ITEM' && /DELIVER/i.test(String(e.data || '')); }).pop();
+      if (dl) rec.driver = String(dl.createdByName || '') + ' (' + Utilities.formatDate(new Date(dl.createdTime), tz, 'dd/MM HH:mm') + ')';
+      const le = sorted[sorted.length - 1];
+      rec.last = typeof codEventText_ === 'function' ? codEventText_(le) : String(le.historyType || '');
+      newSig['qhsig_' + o.order] = sig[o.order];
+    } else if (!needH.some(function (x) { return x.order === o.order; })) newSig['qhsig_' + o.order] = sig[o.order];
+    rec.ghnAt = Utilities.formatDate(now, tz, 'dd/MM HH:mm');
+    recs.push(rec);
+    fresh['qho_' + o.order] = '1';
+  });
+  // Ghi QH_ChiTiet: cap nhat dong cu, them dong moi
+  const lock = kkLock_();
+  lock.waitLock(30000);
+  try {
+    const sh = kkSheet_(QH_SH_DETAIL, QH_DETAIL_HEADERS), cur = qhDetailMap_(), add = [];
+    recs.forEach(function (r) {
+      const row = [r.order, r.hub, r.status, r.cur, r.deliver, r.value, r.attempts, String(r.fails).slice(0, 2000), r.driver, String(r.last).slice(0, 300), now];
+      if (cur[r.order]) sh.getRange(cur[r.order].row, 1, 1, row.length).setValues([row]);
+      else add.push(row);
+    });
+    if (add.length) {
+      const at = sh.getLastRow() + 1;
+      sh.getRange(at, 1, add.length, 2).setNumberFormat('@');
+      sh.getRange(at, 1, add.length, QH_DETAIL_HEADERS.length).setValues(add);
+    }
+  } finally { lock.releaseLock(); }
+  if (Object.keys(newSig).length) cache.putAll(newSig, 21600);
+  if (Object.keys(fresh).length) cache.putAll(fresh, QH_FRESH_SEC);
+  const at = Utilities.formatDate(now, tz, 'HH:mm dd/MM/yyyy');
+  PropertiesService.getScriptProperties().setProperty('QH_STATUS_AT', at);
+  const info = { checked: todo.length, remain: remain, fail: todo.length - recs.length, at: at };
+  if (one) return { ok: true, order: recs[0] ? Object.assign(recs[0], { attempts: recs[0].attempts }) : null, logs: (qhLogs_()[one] || []).slice(-10).reverse(), refresh: info };
+  return Object.assign(qhList_(me), { refresh: info });
+}
+
+// NV buu cuc / AM cap nhat tinh trang xu ly
+function qhSave_(me, b) {
+  const order = String(b.order || '').trim().toUpperCase();
+  const st = QH_STATUSES.filter(function (x) { return x.code === b.status; })[0];
+  if (!st) throw new Error('Chọn tình trạng xử lý');
+  const note = String(b.note || '').trim().slice(0, 500), date = String(b.date || '').trim();
+  if (st.need === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Chọn ngày khách hẹn giao');
+  if (st.need === 'note' && !note) throw new Error('Ghi chú bắt buộc với tình trạng "' + st.name + '"');
+  const src = qhSource_().rows.filter(function (o) { return o.order === order; })[0];
+  if (!src) throw new Error('Đơn ' + order + ' không còn trong danh sách quá hạn');
+  const sc = kkScope_(me);
+  if (!sc.all && !sc.hubs[src.hub]) throw new Error('Đơn thuộc bưu cục ' + src.hub + ', ngoài phạm vi của bạn');
+  const dateVN = date ? date.split('-').reverse().join('/') : '';
+  const lock = kkLock_();
+  lock.waitLock(20000);
+  try {
+    const sh = kkSheet_(QH_SH_LOG, QH_LOG_HEADERS), at = sh.getLastRow() + 1;
+    sh.getRange(at, 2, 1, 4).setNumberFormat('@');
+    sh.getRange(at, 7, 1, 1).setNumberFormat('@');
+    sh.getRange(at, 1, 1, QH_LOG_HEADERS.length).setValues([[new Date(), src.hub, order, st.name, dateVN, note, me.ma, me.ten, KK_ROLE_VN[me.role] || me.role]]);
+  } finally { lock.releaseLock(); }
+  const logs = (qhLogs_()[order] || []);
+  return { ok: true, order: order, handle: logs[logs.length - 1], logs: logs.slice(-10).reverse() };
+}

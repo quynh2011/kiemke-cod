@@ -90,8 +90,8 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .steps b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--line); color: var(--ink-2); font-size: 13px; }
 .steps .on b { background: var(--brand); color: #fff; } .steps .on { color: var(--ink); font-weight: 600; }
 .steps .done b { background: var(--ok); color: #fff; }
-.who { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-.who span { font-size: 13px; color: var(--ink-2); }
+.whobox { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.whobox span { font-size: 13px; color: var(--ink-2); }
 .selfie { position: relative; width: 100%; max-width: 300px; aspect-ratio: 3 / 4; margin: 0 auto; border-radius: 16px; overflow: hidden; background: #111; }
 .selfie video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .selfie .ring { position: absolute; inset: 9% 14% 16%; border: 3px dashed rgba(255,255,255,.75); border-radius: 50% / 45%; pointer-events: none; }
@@ -544,7 +544,7 @@ function enrollSteps() {
 function renderEnroll(err) {
   stopSelfie();
   const st = EN.start;
-  const who = st ? `<div class="who"><b>${esc(st.ten || ('Mã NV ' + st.ma))}</b><span>Mã NV ${esc(st.ma)}${st.chucvu ? ' · ' + esc(st.chucvu) : ''}${st.hub ? ' · BC ' + esc(st.hub) : ''}</span></div>` : '';
+  const who = st ? `<div class="whobox"><b>${esc(st.ten || ('Mã NV ' + st.ma))}</b><span>Mã NV ${esc(st.ma)}${st.chucvu ? ' · ' + esc(st.chucvu) : ''}${st.hub ? ' · BC ' + esc(st.hub) : ''}</span></div>` : '';
   let body = '';
   if (EN.step === 1) body = `
     <form id="e1"><div class="field"><label for="eMa">Mã nhân viên</label><input id="eMa" inputmode="numeric" value="${esc(EN.ma)}" required></div>

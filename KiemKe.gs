@@ -425,6 +425,30 @@ function kkSnapshot_(replace) {
   return rows.length;
 }
 
+// Lay Ten hang / So lan giao / Phuong-Quan-Tinh / Ly do giao that bai tu sheet Data theo ma don
+function kkFillFromData_(list) {
+  const src = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_DATA);
+  if (!src || src.getLastRow() < 2) return;
+  const v = src.getDataRange().getValues();
+  const head = v[0].map(function (h) { return String(h).trim(); });
+  const c = function (n) { return head.indexOf(n); };
+  const ci = { order: c('Mã đơn'), hub: c('Bưu cục'), goods: c('Tên hàng'), att: c('Số lần giao'), ward: c('Phường giao'),
+    dist: c('Quận/Huyện giao'), prov: c('Tỉnh giao'), fails: c('Lý do giao thất bại (theo lần)'), last: c('Lý do lỗi (lần cuối trong chuyến)') };
+  if (ci.order < 0) return;
+  const g = function (r, k) { return ci[k] >= 0 ? r[ci[k]] : ''; };
+  const by = {};
+  v.slice(1).forEach(function (r) { const k = String(g(r, 'order')).trim().toUpperCase(); if (k && !by[k]) by[k] = r; });
+  list.forEach(function (o) {
+    const r = by[o.order]; if (!r) return;
+    o.goods = o.goods || String(g(r, 'goods'));
+    if (o.attempts === '' || o.attempts == null) o.attempts = g(r, 'att');
+    o.ward = o.ward || String(g(r, 'ward'));
+    o.district = o.district || String(g(r, 'dist'));
+    o.province = o.province || String(g(r, 'prov'));
+    o.fails = o.fails || String(g(r, 'fails') || g(r, 'last') || '');
+  });
+}
+
 // Doc cac dong co cot ngay trong khoang [fromNum, toNum] (yyyymmdd), doc tu CUOI sheet len
 function kkReadDays_(name, headers, fromNum, toNum) {
   const sh = kkSheet_(name, headers);
@@ -463,6 +487,8 @@ function kkList_(me) {
         attempts: r[L['Số lần giao']], goods: r[L['Tên hàng']], ward: r[L['Phường giao']], closed: String(r[L['Loại khỏi DS']] || ''),
         district: r[L['Quận/Huyện giao']] || '', province: r[L['Tỉnh giao']] || '', fails: String(r[L['Lý do giao thất bại']] || '') };
     });
+  // Bo sung chi tiet tu sheet Data cho don chot tu ban cu (chua co cot Quan/Tinh/Ly do that bai)
+  if (all.some(function (o) { return !o.fails && !o.district && !o.province; })) kkFillFromData_(all);
   // Don da giao thanh cong / hoan thanh cong -> khong con can kiem
   const orders = all.filter(function (o) { return !o.closed; });
   const closed = all.filter(function (o) { return o.closed; });

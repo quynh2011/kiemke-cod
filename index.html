@@ -88,7 +88,14 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .st { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 2px 8px; color: #fff; }
 .st.go { background: #0B6E3F; } .st.other { background: #B45309; }
 .order.click { cursor: pointer; } .order.click:active { background: var(--bg); }
-.od { display: grid; grid-template-columns: 112px 1fr; gap: 9px 10px; font-size: 14.5px; margin: 6px 0 14px; }
+/* Popup giua man hinh */
+.sheet-bg.center { align-items: center; justify-content: center; padding: 16px; }
+.sheet-bg.center .sheet { border-radius: 16px; max-width: 440px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px);
+  padding: 18px 16px 16px; box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: popIn .16s ease-out; }
+@keyframes popIn { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet .x { float: right; margin: -6px -4px 0 8px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg);
+  font-size: 20px; line-height: 1; color: var(--ink-2); cursor: pointer; }
+.od { display: grid; grid-template-columns: 96px 1fr; gap: 8px 10px; font-size: 14px; margin: 8px 0 14px; }
 .od dt { color: var(--ink-2); } .od dd { margin: 0; font-weight: 500; white-space: pre-line; word-break: break-word; }
 .od .fails { font-weight: 400; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
 .closedline { display: block; width: 100%; text-align: center; font-size: 12.5px; color: var(--ink-2); background: none; border: 0;
@@ -531,8 +538,8 @@ function openOrder(code) {
   const c = (d.checked || {})[code];
   const addr = [o.ward, o.district, o.province].filter(Boolean).join(', ');
   const fails = String(o.fails || '').replace(/\s*\|\s*/g, '\n').trim();
-  const bg = document.createElement('div'); bg.className = 'sheet-bg';
-  bg.innerHTML = `<div class="sheet"><h3>Đơn ${esc(o.order)}</h3>
+  const bg = document.createElement('div'); bg.className = 'sheet-bg center';
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}
       ${o.closed ? `<span class="tag dup">${esc(o.closed)}</span>` : `<span class="tag ${c ? 'ok' : 'miss'}">${c ? 'Đã kiểm ' + esc(c.time) + ' · ' + esc(c.by) : 'Chưa thấy trong kho'}</span>`}</div>
     <dl class="od">
@@ -545,11 +552,11 @@ function openOrder(code) {
       <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
     </dl>
     ${c && c.photo ? `<button class="btn light block" data-ph style="margin-bottom:8px">Xem ảnh lúc kiểm</button>` : ''}
-    <button class="btn primary block" data-x>Đóng</button></div>`;
+    <button class="btn primary block" data-close>Đóng</button></div>`;
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.onclick = e => { if (e.target === bg) close(); };
-  bg.querySelector('[data-x]').onclick = close;
+  bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
   const ph = bg.querySelector('[data-ph]'); if (ph) ph.onclick = () => openViewer(c.photo, c.thumb, o.order + ' · ' + c.time + ' · ' + c.by);
 }
 document.addEventListener('click', e => {

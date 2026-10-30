@@ -496,8 +496,8 @@ function viewLogin(msg) {
     ${DEMO ? `<div class="demo"><b>Chế độ thử (demo)</b> — dữ liệu mẫu, không ghi Google Sheet.<br>
       Tài khoản: Quản lý <b>3172684</b> · Bưu cục <b>2000001</b> · NV giao <b>3179060</b> · AM <b>4000001</b>. Lần đầu bấm <b>Kích hoạt Authenticator</b>.<br>
       Mã đơn mẫu để quét: GYMBDFP9, NVS871726729, GYMWX3B3, GYMPHUXG, GYM3D7K4</div>` : ''}
-    <form id="fLogin" autocomplete="on">
-      <div class="field"><label for="lMa">Mã nhân viên</label><input id="lMa" inputmode="numeric" autocomplete="username" value="${esc(store.get('lastMa', ''))}" required></div>
+    <form id="fLogin" autocomplete="off">
+      <div class="field"><label for="lMa">Mã nhân viên</label><input id="lMa" name="kk-ma-${Date.now()}" inputmode="numeric" autocomplete="off" required></div>
       <div class="field"><label for="lPin">Mã 6 số trên Authenticator</label>
         <input id="lPin" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\\d{6}" placeholder="••••••" required>
         <div class="hint">Mở app Google Authenticator / Microsoft Authenticator, mục <b>Kiem ke COD</b>. Mã đổi mỗi 30 giây.</div></div>
@@ -505,9 +505,8 @@ function viewLogin(msg) {
       <button class="btn primary block" id="lBtn">Đăng nhập</button>
     </form>
     <button class="btn light block" id="lReg" style="margin-top:10px">Lần đầu dùng app? Kích hoạt Authenticator</button></div></div>`;
-  $('#lReg').onclick = () => viewEnroll($('#lMa').value.trim());
+  $('#lReg').onclick = () => viewEnroll();
   $('#lPin').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6 && $('#lMa').value.trim()) $('#fLogin').requestSubmit(); };
-  if (store.get('lastMa', '')) setTimeout(() => $('#lPin') && $('#lPin').focus(), 50);
   $('#fLogin').onsubmit = async e => {
     e.preventDefault();
     const ma = $('#lMa').value.trim(), code = $('#lPin').value.trim();
@@ -517,13 +516,13 @@ function viewLogin(msg) {
       const r = await api('login', { ma, code });
       loggedIn(r, ma);
     } catch (err) {
-      if (err.needSetup) { viewEnroll(ma, err.message); return; }
+      if (err.needSetup) { viewEnroll(); return; }
       $('#lErr').textContent = err.message; $('#lBtn').disabled = false; $('#lPin').value = ''; $('#lPin').focus();
     }
   };
 }
 function loggedIn(r, ma) {
-  S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.set('lastMa', ma);
+  S.token = r.token; S.user = r.user; store.set('token', r.token); store.set('user', r.user); store.del('lastMa');
   S.tab = 'scan'; shell(); loadList(); flush();
 }
 
@@ -534,7 +533,7 @@ const EN = { step: 1, ma: '', start: null, selfie: '', stream: null, until: 0 };
 function stopSelfie() { if (EN.stream) { EN.stream.getTracks().forEach(t => t.stop()); EN.stream = null; } }
 function viewEnroll(ma, msg) {
   stopScan(); stopSelfie();
-  Object.assign(EN, { step: 1, ma: ma || '', start: null, selfie: '', until: 0 });
+  Object.assign(EN, { step: 1, ma: '', start: null, selfie: '', until: 0 }); // khong tu dien ma NV
   renderEnroll(msg && !/chưa kích hoạt/.test(msg) ? msg : '');
 }
 function enrollSteps() {
@@ -547,7 +546,7 @@ function renderEnroll(err) {
   const who = st ? `<div class="whobox"><b>${esc(st.ten || ('Mã NV ' + st.ma))}</b><span>Mã NV ${esc(st.ma)}${st.chucvu ? ' · ' + esc(st.chucvu) : ''}${st.hub ? ' · BC ' + esc(st.hub) : ''}</span></div>` : '';
   let body = '';
   if (EN.step === 1) body = `
-    <form id="e1"><div class="field"><label for="eMa">Mã nhân viên</label><input id="eMa" inputmode="numeric" value="${esc(EN.ma)}" required></div>
+    <form id="e1" autocomplete="off"><div class="field"><label for="eMa">Mã nhân viên</label><input id="eMa" name="kk-en-${Date.now()}" inputmode="numeric" autocomplete="off" required></div>
       <div class="hint" style="margin:-4px 0 12px">Đăng nhập app bằng mã 6 số trên <b>Google Authenticator</b> hoặc <b>Microsoft Authenticator</b>.
         Kích hoạt 1 lần, có <b>quay khuôn mặt để xác minh</b> — ảnh được lưu để quản lý đối chiếu.</div>
       <div class="err" id="eErr">${esc(err || '')}</div>
@@ -576,7 +575,7 @@ function renderEnroll(err) {
     <div class="hint" id="eLeft" style="text-align:center;margin-top:8px"></div>`;
   $('#app').innerHTML = `<div class="login"><div class="card"><h1>Kích hoạt Authenticator</h1>${enrollSteps()}${body}
     <button class="btn light block" id="eBack" style="margin-top:10px">${EN.step === 1 ? 'Quay lại đăng nhập' : 'Làm lại từ đầu'}</button></div></div>`;
-  $('#eBack').onclick = () => EN.step === 1 ? viewLogin() : viewEnroll(EN.ma);
+  $('#eBack').onclick = () => EN.step === 1 ? viewLogin() : viewEnroll();
   if (EN.step === 1) {
     $('#e1').onsubmit = async e => { e.preventDefault();
       EN.ma = $('#eMa').value.trim(); $('#eBtn').disabled = true; $('#eErr').textContent = 'Đang kiểm tra…';

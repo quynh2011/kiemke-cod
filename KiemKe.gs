@@ -58,7 +58,10 @@ const KK_RES = { OK: 'Đúng danh sách', OUT: 'Ngoài danh sách', DUP: 'Quét 
 
 const KK_USER_HEADERS = ['Mã NV', 'Họ tên', 'Vai trò', 'Bưu cục', 'PIN (mã hoá)', 'Trạng thái', 'Cập nhật lúc', 'Cập nhật bởi'];
 const KK_LIST_HEADERS = ['Ngày', 'Bưu cục', 'Mã đơn', 'COD', 'Mã NV giao', 'Tên NV giao', 'SĐT NV giao', 'Mã chuyến',
-  'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc'];
+  'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc', 'Loại khỏi DS'];
+// Trang thai GHN (partnerStatus) -> don da xong, loai khoi danh sach can kiem. Lay theo COD_CFG.FINAL_STATUSES neu co.
+const KK_DONE_STATUSES = ['delivered', 'returned', 'cancel'];
+const KK_STATUS_EVERY_MIN = 30;   // trigger cap nhat trang thai don (phut)
 const KK_RESULT_HEADERS = ['Thời gian', 'Ngày', 'Bưu cục', 'Mã đơn', 'Kết quả', 'COD', 'Mã NV giao', 'Tên NV giao',
   'Mã chuyến', 'Mã người kiểm', 'Tên người kiểm', 'Vai trò', 'Ảnh', 'File ảnh', 'File ảnh nhỏ', 'Số lần đọc khớp',
   'Thiết bị', 'Nội dung mã quét'];
@@ -376,6 +379,13 @@ function kkSnapshot_(replace) {
     for (let i = days.length - 1; i >= 0 && days[i][0] === day; i--) firstToday = i + 2;
   }
   if (firstToday && !replace) return 0;
+  // Giu lai danh dau "Loai khoi DS" cua lan chot truoc trong ngay (don da giao/hoan)
+  const keepDone = {};
+  if (firstToday) {
+    sh.getRange(firstToday, 1, last - firstToday + 1, KK_LIST_HEADERS.length).getValues().forEach(function (r) {
+      if (r[L['Loại khỏi DS']]) keepDone[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])] = [r[L['Trạng thái']], r[L['Loại khỏi DS']]];
+    });
+  }
   const src = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(KK_SRC_DATA);
   if (!src || src.getLastRow() < 2) return 0;
   const v = src.getDataRange().getValues();
@@ -394,9 +404,11 @@ function kkSnapshot_(replace) {
     const hub = String(g(r, 'hub')).trim();
     if (!order || seen[hub + '|' + order]) return;
     seen[hub + '|' + order] = true;
+    const kd = keepDone[hub + '|' + order];
     rows.push([day, hub, order, Number(g(r, 'cod')) || 0, String(g(r, 'dId')).trim(), g(r, 'dName'), String(g(r, 'dPhone')),
-      g(r, 'trip'), g(r, 'status'), g(r, 'att'), String(g(r, 'goods')).slice(0, 200), g(r, 'ward'), now]);
+      g(r, 'trip'), kd ? kd[0] : g(r, 'status'), g(r, 'att'), String(g(r, 'goods')).slice(0, 200), g(r, 'ward'), now, kd ? kd[1] : '']);
   });
+  kkEnsureHeaders_(sh, KK_LIST_HEADERS);
   if (firstToday) sh.deleteRows(firstToday, last - firstToday + 1);
   if (rows.length) {
     const start = sh.getLastRow() + 1;
@@ -436,14 +448,17 @@ function kkList_(me) {
   const sc = kkScope_(me);
   const day = kkToday_(), dn = kkDayNum_(day);
   const hubs = kkHubs_();
-  const orders = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn)
+  const all = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn)
     .filter(function (r) { return kkInScope_(sc, r[L['Bưu cục']], r[L['Mã NV giao']]); })
     .map(function (r) {
       return { hub: String(r[L['Bưu cục']]), hubName: (hubs[r[L['Bưu cục']]] || {}).name || '', order: String(r[L['Mã đơn']]),
         cod: Number(r[L['COD']]) || 0, driverId: String(r[L['Mã NV giao']]), driverName: r[L['Tên NV giao']],
         driverPhone: String(r[L['SĐT NV giao']]), trip: r[L['Mã chuyến']], status: r[L['Trạng thái']],
-        attempts: r[L['Số lần giao']], goods: r[L['Tên hàng']], ward: r[L['Phường giao']] };
+        attempts: r[L['Số lần giao']], goods: r[L['Tên hàng']], ward: r[L['Phường giao']], closed: String(r[L['Loại khỏi DS']] || '') };
     });
+  // Don da giao thanh cong / hoan thanh cong -> khong con can kiem
+  const orders = all.filter(function (o) { return !o.closed; });
+  const closed = all.filter(function (o) { return o.closed; });
   const inList = {};
   orders.forEach(function (o) { inList[o.order] = true; });
   const checked = {}, extra = [];
@@ -456,7 +471,8 @@ function kkList_(me) {
       extra.push({ order: code, time: kkTime_(r[R['Thời gian']]), by: r[R['Tên người kiểm']], thumb: r[R['File ảnh nhỏ']], photo: r[R['File ảnh']] });
     }
   });
-  return { ok: true, day: day, user: kkPublicUser_(me), orders: orders, checked: checked, extra: extra };
+  return { ok: true, day: day, user: kkPublicUser_(me), orders: orders, checked: checked, extra: extra, closed: closed,
+    statusAt: PropertiesService.getScriptProperties().getProperty('KK_STATUS_AT') || '' };
 }
 
 // ================================================================
@@ -473,10 +489,12 @@ function kkScan_(me, b) {
   lock.waitLock(30000);
   try {
     kkSnapshot_(false);
-    const sameCode = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return String(r[L['Mã đơn']]) === code; });
+    const sameAll = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return String(r[L['Mã đơn']]) === code; });
+    const closedRow = sameAll.filter(function (r) { return r[L['Loại khỏi DS']]; })[0] || null;
+    const sameCode = sameAll.filter(function (r) { return !r[L['Loại khỏi DS']]; });
     const row = sameCode.filter(function (r) { return kkInScope_(sc, r[L['Bưu cục']], r[L['Mã NV giao']]); })[0];
     // Don co trong danh sach chung nhung KHONG thuoc pham vi nguoi quet (vd don cua NV khac)
-    const other = row ? null : sameCode[0] || null;
+    const other = row ? null : sameCode[0] || closedRow;
 
     let prev = null;
     if (row) {
@@ -511,7 +529,8 @@ function kkScan_(me, b) {
     return { ok: true, result: result, order: code, prev: prev, time: kkTime_(now), thumb: thumb ? thumb.getId() : full.getId(),
       photo: full.getId(), info: src ? { cod: src[L['COD']], driverName: src[L['Tên NV giao']], trip: src[L['Mã chuyến']],
         status: src[L['Trạng thái']], hub: hub } : null,
-      note: other ? 'Đơn thuộc ' + (other[L['Tên NV giao']] || 'NV khác') + ' - BC ' + other[L['Bưu cục']] + ', không thuộc danh sách của bạn' : '' };
+      note: other && other === closedRow ? 'Đơn đã ' + String(closedRow[L['Loại khỏi DS']]).replace(/^Đã /, '').toLowerCase() + ' - đã loại khỏi danh sách cần kiểm'
+        : other ? 'Đơn thuộc ' + (other[L['Tên NV giao']] || 'NV khác') + ' - BC ' + other[L['Bưu cục']] + ', không thuộc danh sách của bạn' : '' };
   } finally {
     lock.releaseLock();
   }
@@ -564,7 +583,8 @@ function kkReport_(me, b) {
   const hubs = kkHubs_();
   const okHub = function (h) { return (!hubFilter || String(h) === hubFilter) && (sc.all || sc.hubs[String(h)]); };
 
-  const expected = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, from, to).filter(function (r) { return okHub(r[L['Bưu cục']]); });
+  const expected = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, from, to)
+    .filter(function (r) { return okHub(r[L['Bưu cục']]) && !r[L['Loại khỏi DS']]; });
   const results = kkReadDays_(KK_SH_RESULT, KK_RESULT_HEADERS, from, to).filter(function (r) { return okHub(r[R['Bưu cục']]); });
 
   // Ket qua dau tien "Dung danh sach" cua moi (ngay, don)
@@ -732,12 +752,84 @@ function KKSetup() {
   console.log('[KiemKe] Cai dat xong.');
 }
 
-// Trigger: tong hop bao cao 21h hang ngay
+// Trigger: tong hop bao cao 21h hang ngay + cap nhat trang thai don moi KK_STATUS_EVERY_MIN phut
 function KKCaiTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'KKTongHopNgay') ScriptApp.deleteTrigger(t);
+    const f = t.getHandlerFunction();
+    if (f === 'KKTongHopNgay' || f === 'KKCapNhatTrangThai') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('KKTongHopNgay').timeBased().everyDays(1).atHour(21).inTimezone(Session.getScriptTimeZone()).create();
+  ScriptApp.newTrigger('KKCapNhatTrangThai').timeBased().everyMinutes(KK_STATUS_EVERY_MIN).create();
+  console.log('[KiemKe] Da cai trigger: tong hop 21h + cap nhat trang thai don ' + KK_STATUS_EVERY_MIN + ' phut/lan.');
+}
+
+// ================================================================
+// CAP NHAT TRANG THAI DON (GHN common-info) -> loai don da giao / da hoan khoi danh sach can kiem
+// Dung lai ham goi API cua COD_check.gs (cung project): codReadConfig_, codHeaders_, codFetchBatch_
+// ================================================================
+function KKCapNhatTrangThai() {
+  if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') {
+    throw new Error('Cần file COD_check.gs trong cùng project để tra trạng thái đơn');
+  }
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = codReadConfig_(ss);
+  const day = kkToday_(), dn = kkDayNum_(day);
+  const todo = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return !r[L['Loại khỏi DS']]; });
+  if (!todo.length) { console.log('[KiemKe] Khong co don can cap nhat trang thai.'); return 0; }
+  const doneSt = (typeof COD_CFG !== 'undefined' && COD_CFG.FINAL_STATUSES) || KK_DONE_STATUSES;
+  const res = codFetchBatch_(todo.map(function (r) {
+    return { label: 'common-info ' + r[L['Mã đơn']], apiUrl: COD_CFG.URL_COMMON_INFO,
+      headers: codHeaders_(cfg, String(r[L['Bưu cục']])), payload: { order_code: String(r[L['Mã đơn']]) } };
+  }));
+  const upd = {}; // hub|order -> [trang thai VN, loai]
+  let fail = 0;
+  const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm');
+  todo.forEach(function (r, i) {
+    const d = res[i].json && res[i].json.data;
+    if (res[i].error || !d) { fail++; return; }
+    const st = String(d.partnerStatus || '').toLowerCase();
+    const vn = typeof codStatusVN_ === 'function' ? codStatusVN_(st) : st;
+    upd[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])] = [vn, doneSt.indexOf(st) >= 0 ? vn + ' lúc ' + now : ''];
+  });
+  // Ghi lai (doc lai vi tri dong trong khoa, vi danh sach co the vua duoc chot lai)
+  let closed = 0;
+  const lock = kkLock_();
+  lock.waitLock(30000);
+  try {
+    const sh = kkSheet_(KK_SH_LIST, KK_LIST_HEADERS);
+    kkEnsureHeaders_(sh, KK_LIST_HEADERS);
+    const last = sh.getLastRow();
+    let first = 0;
+    if (last > 1) {
+      const days = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+      for (let i = days.length - 1; i >= 0 && days[i][0] === day; i--) first = i + 2;
+    }
+    if (first) {
+      const n = last - first + 1;
+      const v = sh.getRange(first, 1, n, KK_LIST_HEADERS.length).getValues();
+      const stCol = v.map(function (r) { return [r[L['Trạng thái']]]; });
+      const doneCol = v.map(function (r) { return [r[L['Loại khỏi DS']]]; });
+      v.forEach(function (r, i) {
+        const u = upd[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])];
+        if (!u || r[L['Loại khỏi DS']]) return;
+        stCol[i][0] = u[0];
+        if (u[1]) { doneCol[i][0] = u[1]; closed++; }
+      });
+      sh.getRange(first, L['Trạng thái'] + 1, n, 1).setValues(stCol);
+      sh.getRange(first, L['Loại khỏi DS'] + 1, n, 1).setValues(doneCol);
+    }
+  } finally { lock.releaseLock(); }
+  PropertiesService.getScriptProperties().setProperty('KK_STATUS_AT', now + ' ' + day);
+  console.log('[KiemKe] Cap nhat trang thai ' + todo.length + ' don: loai ' + closed + ' don da giao/hoan' + (fail ? ', ' + fail + ' don chua tra duoc' : '') + '.');
+  return closed;
+}
+
+// Them tieu de cot moi (vd "Loai khoi DS") vao sheet da tao tu ban cu
+function kkEnsureHeaders_(sh, headers) {
+  const cur = sh.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
+  headers.forEach(function (h, i) {
+    if (cur[i] !== h) sh.getRange(1, i + 1).setValue(h).setFontWeight('bold').setBackground('#F26522').setFontColor('#FFFFFF');
+  });
 }
 
 // ================================================================

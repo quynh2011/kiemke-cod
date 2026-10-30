@@ -119,4 +119,4 @@ Quét đơn **không thuộc phạm vi** thì app báo "Ngoài danh sách". Lầ
 - **Còn thiếu cuối ngày** = đơn chưa ai thấy trong kho → đối chiếu với NV giao (có SĐT trên thẻ đơn).
 
 ---
-Thư viện quét: [html5-qrcode](https://github.com/mebjas/html5-qrcode) 2.3.8 (Apache-2.0), kèm trong repo.
+Thư viện: [html5-qrcode](https://github.com/mebjas/html5-qrcode) 2.3.8 và [SheetJS xlsx](https://sheetjs.com) 0.18.5 (Apache-2.0), kèm trong repo.

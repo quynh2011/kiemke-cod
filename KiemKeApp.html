@@ -1030,7 +1030,7 @@ function renderReport() {
   const isChk = p.group === 'checker';
   const det = p.filter === 'bad' ? r.extras : r.details.filter(d => p.filter === 'all' || (p.filter === 'ok' ? d.done : !d.done));
   $('#rOut').innerHTML = `
-    <div class="h2">Kết quả ${esc(r.from)}${r.to !== r.from ? ' → ' + esc(r.to) : ''}<button class="btn light" id="rCsv" style="height:34px;padding:0 10px">${svg('dl')}CSV</button></div>
+    <div class="h2">Kết quả ${esc(r.from)}${r.to !== r.from ? ' → ' + esc(r.to) : ''}<button class="btn light" id="rCsv" style="height:34px;padding:0 10px">${svg('dl')}Excel</button></div>
     <div class="kpis">
       <div class="kpi"><span>Cần kiểm</span><b class="num">${t.need}</b></div>
       <div class="kpi ok"><span>Đã kiểm · ${rate}%</span><b class="num">${t.done}</b></div>
@@ -1057,8 +1057,60 @@ function renderReport() {
   $('#rDet').onclick = () => { S.rep.showDet = !S.rep.showDet; renderReport(); };
   document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { S.rep.group = b.dataset.g; renderReport(); });
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.rep.filter = b.dataset.f; renderReport(); });
-  $('#rCsv').onclick = exportCsv;
+  $('#rCsv').onclick = exportXlsx;
   loadThumbs();
+}
+// Xuat file Excel (.xlsx) nhieu sheet. Thu vien SheetJS chi tai khi bam nut.
+function loadXlsxLib() {
+  if (window.XLSX) return Promise.resolve();
+  // Kem trong repo (cung domain); trang chay tu Apps Script thi lay tu GitHub Pages, cuoi cung la CDN
+  const srcs = (GAS ? ['https://quynh2011.github.io/kiemke-cod/xlsx.full.min.js'] : ['xlsx.full.min.js'])
+    .concat(['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js']);
+  const one = src => new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src;
+    sc.onload = () => window.XLSX ? ok() : no(); sc.onerror = () => { sc.remove(); no(); }; document.head.appendChild(sc); });
+  return srcs.reduce((p, src) => p.catch(() => one(src)), Promise.reject())
+    .catch(() => { throw new Error('Không tải được thư viện Excel, kiểm tra mạng'); });
+}
+async function exportXlsx() {
+  const r = S.report; if (!r) return;
+  const btn = $('#rCsv'); btn.disabled = true; busy(1);
+  try {
+    await loadXlsxLib();
+    const wb = XLSX.utils.book_new();
+    const add = (name, rows, widths) => {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = widths.map(w => ({ wch: w }));
+      // Dinh dang so: cot tien -> #,##0 ; cot ti le -> 0.0%
+      rows[0].forEach((h, c) => {
+        const z = /COD|Giá trị/.test(h) ? '#,##0' : /Tỉ lệ/.test(h) ? '0.0%' : '';
+        if (z) for (let r = 1; r < rows.length; r++) { const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell && cell.t === 'n') cell.z = /Tỉ lệ/.test(rows[r][0]) ? '0.0%' : z; }
+      });
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, rows.length - 1), c: rows[0].length - 1 } }) };
+      ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+    const t = r.total;
+    add('Tổng quan', [['Chỉ tiêu', 'Giá trị'], ['Từ ngày', r.from], ['Đến ngày', r.to], ['Cần kiểm', t.need], ['Đã kiểm', t.done], ['Còn thiếu', t.miss],
+      ['Tỉ lệ đã kiểm', t.need ? t.done / t.need : 0], ['COD còn thiếu', t.codMiss], ['Ngoài danh sách', t.extra]], [22, 18]);
+    GROUPS.forEach(g => {
+      const rows = r.groups.filter(x => x.kind === g[0]);
+      if (!rows.length) return;
+      const chk = g[0] === 'checker';
+      add('Theo ' + g[1], [chk ? [g[1], 'Mã', 'Kiểm đúng', 'Ngoài DS', 'Quét lại'] : [g[1], 'Mã', 'Cần kiểm', 'Đã kiểm', 'Còn thiếu', 'Tỉ lệ', 'COD thiếu', 'Quét lại', 'Người kiểm']]
+        .concat(rows.map(x => chk ? [x.name || x.key, x.key, x.done, x.extra, x.rescan]
+          : [x.name || x.key, x.key, x.need, x.done, x.miss, x.rate === null ? '' : x.rate / 100, x.codMiss, x.rescan, x.checkers || ''])),
+        chk ? [28, 12, 11, 11, 10] : [28, 12, 10, 10, 10, 8, 14, 9, 30]);
+    });
+    add('Chi tiết đơn', [['Ngày', 'Bưu cục', 'Mã đơn', 'COD', 'Mã NV giao', 'Tên NV giao', 'Trạng thái', 'Kết quả', 'Giờ kiểm', 'Người kiểm', 'Quét lại']]
+      .concat(r.details.map(d => [d.day, d.hub, d.order, d.cod, d.driverId, d.driverName, d.status, d.done ? 'Đã kiểm' : 'Còn thiếu', d.time, d.by, d.rescan || 0])),
+      [11, 10, 16, 13, 11, 24, 16, 11, 18, 22, 8]);
+    if (r.extras.length) add('Ngoài DS', [['Ngày', 'Bưu cục', 'Mã đơn', 'Giờ quét', 'Người quét']]
+      .concat(r.extras.map(x => [x.day, x.hub, x.order, x.time, x.by])), [11, 10, 16, 18, 22]);
+    XLSX.writeFile(wb, 'KiemKe_' + r.from.replace(/\//g, '-') + (r.to !== r.from ? '_' + r.to.replace(/\//g, '-') : '') + '.xlsx');
+    toast('Đã tải file Excel');
+  } catch (e) { toast(e.message, 5000); }
+  finally { btn.disabled = false; busy(-1); }
 }
 function exportCsv() {
   const r = S.report;

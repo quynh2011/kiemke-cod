@@ -118,7 +118,7 @@ function kkHandle_(b) {
     const me = kkAuth_(b.token);
     if (a === 'me') return { ok: true, user: kkPublicUser_(me) };
     if (a === 'list') return kkList_(me);
-    if (a === 'refresh') return kkRefreshMine_(me);
+    if (a === 'refresh') return kkRefreshMine_(me, b);
     if (a === 'scan') return kkScan_(me, b);
     if (a === 'report') return kkReport_(me, b);
     if (a === 'photo') return kkPhoto_(me, b);
@@ -567,11 +567,12 @@ function kkFillFromData_(list) {
   list.forEach(function (o) {
     const r = by[o.order]; if (!r) return;
     o.goods = o.goods || String(g(r, 'goods'));
+    // Chi bo sung truong con trong; ket qua tra GHN (realtime) da ghi vao danh sach thi luon duoc uu tien
     if (o.attempts === '' || o.attempts == null) o.attempts = g(r, 'att');
+    o.fails = o.fails || String(g(r, 'fails') || g(r, 'last') || '');
     o.ward = o.ward || String(g(r, 'ward'));
     o.district = o.district || String(g(r, 'dist'));
     o.province = o.province || String(g(r, 'prov'));
-    o.fails = o.fails || String(g(r, 'fails') || g(r, 'last') || '');
   });
 }
 
@@ -614,7 +615,7 @@ function kkList_(me) {
         district: r[L['Quận/Huyện giao']] || '', province: r[L['Tỉnh giao']] || '', fails: String(r[L['Lý do giao thất bại']] || '') };
     });
   // Bo sung chi tiet tu sheet Data cho don chot tu ban cu (chua co cot Quan/Tinh/Ly do that bai)
-  if (all.some(function (o) { return !o.fails && !o.district && !o.province; })) kkFillFromData_(all);
+  if (all.some(function (o) { return !o.district || !o.province || !o.fails || o.attempts === '' || o.attempts == null; })) kkFillFromData_(all);
   // Don da giao thanh cong / hoan thanh cong -> khong con can kiem
   const orders = all.filter(function (o) { return !o.closed; });
   const closed = all.filter(function (o) { return o.closed; });
@@ -943,10 +944,11 @@ function KKCapNhatTrangThai() {
 }
 
 // Tu app: tra GHN ngay cac don trong pham vi cua nguoi dung (bo qua don vua tra trong KK_STATUS_FRESH_SEC giay)
-function kkRefreshMine_(me) {
+function kkRefreshMine_(me, b) {
   const sc = kkScope_(me);
-  const r = kkRefreshStatus_(function (row) { return kkInScope_(sc, row[L['Bưu cục']], row[L['Mã NV giao']]); },
-    KK_STATUS_MAX_PER_CALL, true);
+  const one = String((b && b.order) || '').trim().toUpperCase(); // mo popup 1 don -> tra GHN ngay don do
+  const r = kkRefreshStatus_(function (row) { return kkInScope_(sc, row[L['Bưu cục']], row[L['Mã NV giao']]) && (!one || String(row[L['Mã đơn']]) === one); },
+    one ? 3 : KK_STATUS_MAX_PER_CALL, !one);
   const out = kkList_(me);
   out.refresh = r;
   return out;
@@ -997,8 +999,24 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
     else if (cur && cur !== hub && !(atHub.indexOf(st) >= 0 && deliver === hub)) {
       why = 'Đã rời bưu cục - kho hiện tại ' + cur + (deliver && deliver !== hub ? ', kho giao ' + deliver : '') + ' (' + now + ')';
     }
-    upd[hub + '|' + String(r[L['Mã đơn']])] = [vn, why];
+    upd[hub + '|' + String(r[L['Mã đơn']])] = [vn, why, null, null];
   });
+  // Lich su don (get-order-history): so lan giao + ly do giao that bai MOI NHAT cho don con can kiem
+  const live = todo.filter(function (r) { const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])]; return u && !u[1]; });
+  if (live.length && typeof codDeliveryAttempts_ === 'function' && COD_CFG.URL_HISTORY) {
+    const hr = codFetchBatch_(live.map(function (r) {
+      return { label: 'get-order-history ' + r[L['Mã đơn']], apiUrl: COD_CFG.URL_HISTORY,
+        headers: codHeaders_(cfg, String(r[L['Bưu cục']])), payload: { orderCode: String(r[L['Mã đơn']]), paging: { offset: 0, limit: 1000 } } };
+    }));
+    live.forEach(function (r, i) {
+      if (hr[i].error || !hr[i].json) return;
+      const ev = ((hr[i].json.data || {}).data || []);
+      if (!ev.length) return;
+      const a = codDeliveryAttempts_(ev);
+      const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])];
+      u[2] = a.count; u[3] = a.fails;
+    });
+  }
   // Ghi lai (doc lai vi tri dong trong khoa, vi danh sach co the vua duoc chot lai)
   let closed = 0;
   const lock = kkLock_();
@@ -1017,14 +1035,19 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
       const v = sh.getRange(first, 1, n, KK_LIST_HEADERS.length).getValues();
       const stCol = v.map(function (r) { return [r[L['Trạng thái']]]; });
       const doneCol = v.map(function (r) { return [r[L['Loại khỏi DS']]]; });
+      const attCol = v.map(function (r) { return [r[L['Số lần giao']]]; });
+      const failCol = v.map(function (r) { return [r[L['Lý do giao thất bại']]]; });
       v.forEach(function (r, i) {
         const u = upd[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])];
         if (!u || r[L['Loại khỏi DS']]) return;
         stCol[i][0] = u[0];
         if (u[1]) { doneCol[i][0] = u[1]; closed++; }
+        if (u[2] !== null) { attCol[i][0] = u[2]; failCol[i][0] = String(u[3] || '').slice(0, 2000); }
       });
       sh.getRange(first, L['Trạng thái'] + 1, n, 1).setValues(stCol);
       sh.getRange(first, L['Loại khỏi DS'] + 1, n, 1).setValues(doneCol);
+      sh.getRange(first, L['Số lần giao'] + 1, n, 1).setValues(attCol);
+      sh.getRange(first, L['Lý do giao thất bại'] + 1, n, 1).setValues(failCol);
     }
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('KK_STATUS_AT', now + ' ' + day);

@@ -143,6 +143,7 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 @keyframes popIn { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet .x { float: right; margin: -6px -4px 0 8px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg);
   font-size: 20px; line-height: 1; color: var(--ink-2); cursor: pointer; }
+.odlive { font-size: 12px; color: var(--ink-3); margin: -4px 0 6px; min-height: 16px; } .odlive .ld.sm { padding: 0; }
 .od { display: grid; grid-template-columns: 96px 1fr; gap: 8px 10px; font-size: 14px; margin: 8px 0 14px; }
 .od dt { color: var(--ink-2); } .od dd { margin: 0; font-weight: 500; white-space: pre-line; word-break: break-word; }
 .od .fails { font-weight: 400; background: var(--bg); border-radius: 8px; padding: 8px 10px; }
@@ -745,13 +746,16 @@ function hubList() {
 // Dang giao: xanh dam; trang thai khac: vang dam
 function stTag(st) { return st ? `<span class="st ${/^đang giao$/i.test(String(st).trim()) ? 'go' : 'other'}">${esc(st)}</span>` : ''; }
 // Popup thong tin don hang
-function openOrder(code) {
+function openOrder(code, again) {
   const d = S.data || {}, o = (d.orders || []).concat(d.closed || []).find(x => x.order === code); if (!o) return;
+  if (again) { const old = document.querySelector('.sheet-bg.center[data-order]'); if (old) old.remove(); }
   const c = (d.checked || {})[code];
   const addr = [o.ward, o.district, o.province].filter(Boolean).join(', ');
   const fails = String(o.fails || '').replace(/\s*\|\s*/g, '\n').trim();
-  const bg = document.createElement('div'); bg.className = 'sheet-bg center';
+  const bg = document.createElement('div'); bg.className = 'sheet-bg center'; bg.dataset.order = code;
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
+    <div class="odlive">${again ? 'Đã cập nhật từ GHN lúc ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : loader('Đang lấy trạng thái mới nhất từ GHN', 6, true, 'od_' + code)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}
       ${o.closed ? `<span class="tag dup">${esc(o.closed)}</span>` : `<span class="tag ${c ? 'ok' : 'miss'}">${c ? 'Đã kiểm ' + esc(c.time) + ' · ' + esc(c.by) : 'Chưa thấy trong kho'}</span>`}</div>
     <dl class="od">
@@ -770,6 +774,14 @@ function openOrder(code) {
   bg.onclick = e => { if (e.target === bg) close(); };
   bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
   const ph = bg.querySelector('[data-ph]'); if (ph) ph.onclick = () => openViewer(c.photo, c.thumb, o.order + ' · ' + c.time + ' · ' + c.by);
+  if (again || DEMO) { if (DEMO && !again) bg.querySelector('.odlive').textContent = ''; return; }
+  // Realtime: tra GHN ngay don nay (trang thai, so lan giao, ly do that bai moi nhat), xong ve lai popup neu con mo
+  api('refresh', { order: code }).then(r => {
+    setData(r);
+    if (!document.body.contains(bg)) return;
+    const still = (r.orders || []).concat(r.closed || []).some(x => x.order === code);
+    if (still) openOrder(code, true); else { bg.remove(); toast('Đơn ' + code + ' không còn trong danh sách'); }
+  }).catch(e => { const el = bg.querySelector('.odlive'); if (el) el.textContent = 'Chưa lấy được dữ liệu mới từ GHN — đang hiện dữ liệu gần nhất.'; });
 }
 document.addEventListener('click', e => {
   if (e.target.closest('a, .thumb.click, button')) return;

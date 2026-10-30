@@ -483,7 +483,7 @@ const Q = (function () {
 // =====================================================================
 const S = {
   token: store.get('token', ''), user: store.get('user', null), tab: 'scan',
-  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false, f: store.get('filters', {}), fOpen: false,
+  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false, odAt: {}, f: store.get('filters', {}), fOpen: false,
   scanner: null, scanning: false, torch: false, busy: false, cand: null,
   report: null, rep: { from: todayISO(), to: todayISO(), hub: '', group: 'hub', filter: 'miss' }, admin: null
 };
@@ -713,7 +713,7 @@ async function refreshStatus() {
       const r = await api('refresh');
       setData(r);
       if (r.refresh && r.refresh.closed) toast('Đã loại ' + r.refresh.closed + ' đơn vừa giao / hoàn / rời bưu cục');
-      if (!r.refresh || !r.refresh.remain) break;
+      if (!r.refresh || !r.refresh.remain) { const t = Date.now(); (r.orders || []).forEach(o => { S.odAt[o.order] = t; }); break; }
     }
   } catch (e) { if (e.auth) onApiError(e); }
   finally { S.refreshing = false; paintRefresh(); }
@@ -750,13 +750,14 @@ function stTag(st) { return st ? `<span class="st ${/^đang giao$/i.test(String(
 function openOrder(code, again) {
   const d = S.data || {}, o = (d.orders || []).concat(d.closed || []).find(x => x.order === code); if (!o) return;
   if (again) { const old = document.querySelector('.sheet-bg.center[data-order]'); if (old) old.remove(); }
+  const fresh = again || DEMO || (S.odAt[code] && Date.now() - S.odAt[code] < 180000); // da tra GHN trong 3 phut -> hien ngay
   const c = (d.checked || {})[code];
   const addr = [o.ward, o.district, o.province].filter(Boolean).join(', ');
   const fails = String(o.fails || '').replace(/\s*\|\s*/g, '\n').trim();
   const bg = document.createElement('div'); bg.className = 'sheet-bg center' + (again ? ' noanim' : ''); bg.dataset.order = code;
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
-    <div class="odlive">${again ? 'Đã cập nhật từ GHN lúc ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      : loader('Đang lấy trạng thái mới nhất từ GHN', 6, true, 'od_' + code)}</div>
+    <div class="odlive">${fresh ? 'Cập nhật từ GHN lúc ' + new Date(S.odAt[code]).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : loader('Đang lấy trạng thái mới nhất từ GHN', 3, true, 'od_' + code)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}
       ${o.closed ? `<span class="tag dup">${esc(o.closed)}</span>` : `<span class="tag ${c ? 'ok' : 'miss'}">${c ? 'Đã kiểm ' + esc(c.time) + ' · ' + esc(c.by) : 'Chưa thấy trong kho'}</span>`}</div>
     <dl class="od">
@@ -775,19 +776,30 @@ function openOrder(code, again) {
   bg.onclick = e => { if (e.target === bg) close(); };
   bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
   const ph = bg.querySelector('[data-ph]'); if (ph) ph.onclick = () => openViewer(c.photo, c.thumb, o.order + ' · ' + c.time + ' · ' + c.by);
-  if (again || DEMO) { if (DEMO && !again) bg.querySelector('.odlive').textContent = ''; return; }
-  // Realtime: tra GHN ngay don nay (trang thai, so lan giao, ly do that bai moi nhat), xong ve lai popup neu con mo
+  if (DEMO && !again) bg.querySelector('.odlive').textContent = '';
+  if (fresh) return;
+  // Realtime: tra GHN ngay don nay (trang thai, so lan giao, ly do that bai moi nhat) - may chu chi tra ve dung don nay
   api('refresh', { order: code }).then(r => {
-    setData(r);
-    if (!document.body.contains(bg)) return;
-    const still = (r.orders || []).concat(r.closed || []).some(x => x.order === code);
-    if (still) openOrder(code, true); else { bg.remove(); toast('Đơn ' + code + ' không còn trong danh sách'); }
+    S.odAt[code] = Date.now();
+    if (r.order) mergeOrder(r.order);
+    if (document.body.contains(bg)) openOrder(code, true);
   }).catch(e => { const el = bg.querySelector('.odlive'); if (el) el.textContent = 'Chưa lấy được dữ liệu mới từ GHN — đang hiện dữ liệu gần nhất.'; });
 }
 document.addEventListener('click', e => {
   if (e.target.closest('a, .thumb.click, button')) return;
   const el = e.target.closest('.order[data-o]'); if (el) openOrder(el.dataset.o);
 });
+// Gop ket qua tra GHN cua 1 don vao danh sach dang co (khong tai lai ca danh sach)
+function mergeOrder(u) {
+  const d = S.data; if (!d) return;
+  let o = d.orders.find(x => x.order === u.order) || (d.closed || []).find(x => x.order === u.order); if (!o) return;
+  Object.assign(o, { status: u.status, attempts: u.attempts, fails: u.fails });
+  if (u.closed && !o.closed) {
+    o.closed = u.closed; d.orders = d.orders.filter(x => x !== o); (d.closed = d.closed || []).push(o);
+    toast('Đơn ' + u.order + ': ' + u.closed + ' → đã loại khỏi danh sách cần kiểm', 5000);
+  }
+  if (S.tab === 'list') renderList(); else if (S.tab === 'scan') renderStats();
+}
 function hubLabel(o) { return esc(o.hub || '') + (o.hubName ? ' · ' + esc(o.hubName) : ''); }
 // ---- Bo loc: trang thai, NV giao, so lan giao, COD, dia chi giao ----
 const COD_RANGES = [['lt2', 'Dưới 2 triệu', 0, 2e6], ['2-5', '2 - 5 triệu', 2e6, 5e6], ['5-10', '5 - 10 triệu', 5e6, 1e7], ['ge10', 'Từ 10 triệu', 1e7, Infinity]];

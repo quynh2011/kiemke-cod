@@ -937,7 +937,7 @@ function KKCaiTrigger() {
 // Dung lai ham goi API cua COD_check.gs (cung project): codReadConfig_, codHeaders_, codFetchBatch_
 // ================================================================
 function KKCapNhatTrangThai() {
-  const r = kkRefreshStatus_(function () { return true; }, 0, false);
+  const r = kkRefreshStatus_(function () { return true; }, 0, false, false);
   console.log('[KiemKe] Cap nhat trang thai ' + r.checked + ' don: loai ' + r.closed + ' don (da giao/hoan/roi buu cuc)' +
     (r.fail ? ', ' + r.fail + ' don chua tra duoc' : '') + '.');
   return r.closed;
@@ -948,15 +948,18 @@ function kkRefreshMine_(me, b) {
   const sc = kkScope_(me);
   const one = String((b && b.order) || '').trim().toUpperCase(); // mo popup 1 don -> tra GHN ngay don do
   const r = kkRefreshStatus_(function (row) { return kkInScope_(sc, row[L['Bưu cục']], row[L['Mã NV giao']]) && (!one || String(row[L['Mã đơn']]) === one); },
-    one ? 3 : KK_STATUS_MAX_PER_CALL, !one);
+    one ? 3 : KK_STATUS_MAX_PER_CALL, !one, !!one);
+  // 1 don (popup): chi tra ve dung don do -> nhanh, khong tai lai ca danh sach
+  if (one) return { ok: true, refresh: { checked: r.checked, closed: r.closed, fail: r.fail, remain: 0, at: r.at }, order: r.rows[0] || null };
   const out = kkList_(me);
+  delete r.rows;
   out.refresh = r;
   return out;
 }
 
 // Tra trang thai GHN (common-info) cho cac don hom nay thoa pick(row), ghi vao KK_DanhSach.
 // limit: so don toi da (0 = khong gioi han); skipFresh: bo qua don vua tra gan day
-function kkRefreshStatus_(pick, limit, skipFresh) {
+function kkRefreshStatus_(pick, limit, skipFresh, forceHistory) {
   if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') {
     throw new Error('Cần file COD_check.gs trong cùng project để tra trạng thái đơn');
   }
@@ -975,7 +978,7 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
   todo.sort(function (a, b) { return (Number(b[L['COD']]) || 0) - (Number(a[L['COD']]) || 0); });
   const remain = limit && todo.length > limit ? todo.length - limit : 0;
   if (limit) todo = todo.slice(0, limit);
-  if (!todo.length) return { checked: 0, closed: 0, fail: 0, remain: 0, at: PropertiesService.getScriptProperties().getProperty('KK_STATUS_AT') || '' };
+  if (!todo.length) return { checked: 0, closed: 0, fail: 0, remain: 0, rows: [], at: PropertiesService.getScriptProperties().getProperty('KK_STATUS_AT') || '' };
   if (typeof COD_CONC_ !== 'undefined' && skipFresh) COD_CONC_ = Math.max(COD_CONC_ || 0, 12); // nguoi dung dang cho -> chay nhanh hon
   const doneSt = (typeof COD_CFG !== 'undefined' && COD_CFG.FINAL_STATUSES) || KK_DONE_STATUSES;
   const atHub = (typeof COD_CFG !== 'undefined' && COD_CFG.AT_HUB_STATUSES) || ['delivering', 'delivery_fail', 'waiting_to_return', 'money_collect_delivering', 'storing'];
@@ -999,10 +1002,18 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
     else if (cur && cur !== hub && !(atHub.indexOf(st) >= 0 && deliver === hub)) {
       why = 'Đã rời bưu cục - kho hiện tại ' + cur + (deliver && deliver !== hub ? ', kho giao ' + deliver : '') + ' (' + now + ')';
     }
-    upd[hub + '|' + String(r[L['Mã đơn']])] = [vn, why, null, null];
+    upd[hub + '|' + String(r[L['Mã đơn']])] = [vn, why, null, null, st + '|' + (d.partnerAction || '') + '|' + (d.status || '') + '|' + cur];
   });
   // Lich su don (get-order-history): so lan giao + ly do giao that bai MOI NHAT cho don con can kiem
-  const live = todo.filter(function (r) { const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])]; return u && !u[1]; });
+  // Chi hoi lich su khi don co thay doi so voi lan tra truoc (chu ky trang thai / thao tac cuoi) -> giam ~1 nua so lan goi GHN
+  const sigKey = function (r) { return 'kksig_' + String(r[L['Bưu cục']]).trim() + '_' + String(r[L['Mã đơn']]); };
+  const cand = todo.filter(function (r) { const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])]; return u && !u[1]; });
+  const prevSig = cand.length ? cache.getAll(cand.map(sigKey)) : {};
+  const live = cand.filter(function (r) {
+    const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])];
+    return forceHistory || prevSig[sigKey(r)] !== u[4] || !String(r[L['Lý do giao thất bại']] || '') && Number(r[L['Số lần giao']]) > 0;
+  });
+  const newSig = {};
   if (live.length && typeof codDeliveryAttempts_ === 'function' && COD_CFG.URL_HISTORY) {
     const hr = codFetchBatch_(live.map(function (r) {
       return { label: 'get-order-history ' + r[L['Mã đơn']], apiUrl: COD_CFG.URL_HISTORY,
@@ -1015,10 +1026,14 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
       const a = codDeliveryAttempts_(ev);
       const u = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])];
       u[2] = a.count; u[3] = a.fails;
+      newSig[sigKey(r)] = u[4];
     });
   }
+  cand.forEach(function (r) { if (live.indexOf(r) < 0) newSig[sigKey(r)] = upd[String(r[L['Bưu cục']]).trim() + '|' + String(r[L['Mã đơn']])][4]; });
+  if (Object.keys(newSig).length) cache.putAll(newSig, 21600);
   // Ghi lai (doc lai vi tri dong trong khoa, vi danh sach co the vua duoc chot lai)
   let closed = 0;
+  const rows = [];
   const lock = kkLock_();
   lock.waitLock(30000);
   try {
@@ -1037,24 +1052,29 @@ function kkRefreshStatus_(pick, limit, skipFresh) {
       const doneCol = v.map(function (r) { return [r[L['Loại khỏi DS']]]; });
       const attCol = v.map(function (r) { return [r[L['Số lần giao']]]; });
       const failCol = v.map(function (r) { return [r[L['Lý do giao thất bại']]]; });
+      const touched = [];
       v.forEach(function (r, i) {
         const u = upd[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])];
         if (!u || r[L['Loại khỏi DS']]) return;
         stCol[i][0] = u[0];
         if (u[1]) { doneCol[i][0] = u[1]; closed++; }
         if (u[2] !== null) { attCol[i][0] = u[2]; failCol[i][0] = String(u[3] || '').slice(0, 2000); }
+        touched.push(i);
+        rows.push({ order: String(r[L['Mã đơn']]), hub: String(r[L['Bưu cục']]), status: stCol[i][0], closed: doneCol[i][0] || '',
+          attempts: attCol[i][0], fails: String(failCol[i][0] || '') });
       });
-      sh.getRange(first, L['Trạng thái'] + 1, n, 1).setValues(stCol);
-      sh.getRange(first, L['Loại khỏi DS'] + 1, n, 1).setValues(doneCol);
-      sh.getRange(first, L['Số lần giao'] + 1, n, 1).setValues(attCol);
-      sh.getRange(first, L['Lý do giao thất bại'] + 1, n, 1).setValues(failCol);
+      const cols = [['Trạng thái', stCol], ['Loại khỏi DS', doneCol], ['Số lần giao', attCol], ['Lý do giao thất bại', failCol]];
+      if (touched.length <= 5) {
+        // It don (popup / quet): chi ghi dung dong do
+        touched.forEach(function (i) { cols.forEach(function (c) { sh.getRange(first + i, L[c[0]] + 1).setValue(c[1][i][0]); }); });
+      } else cols.forEach(function (c) { sh.getRange(first, L[c[0]] + 1, n, 1).setValues(c[1]); });
     }
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('KK_STATUS_AT', now + ' ' + day);
   const fresh = {};
   todo.forEach(function (r, i) { if (!res[i].error) fresh['kko_' + r[L['Bưu cục']] + '_' + r[L['Mã đơn']]] = '1'; });
   if (Object.keys(fresh).length) cache.putAll(fresh, KK_STATUS_FRESH_SEC);
-  return { checked: todo.length, closed: closed, fail: fail, remain: remain, at: now + ' ' + day };
+  return { checked: todo.length, closed: closed, fail: fail, remain: remain, rows: rows, at: now + ' ' + day };
 }
 
 function kkStatusVN_(st) {

@@ -777,6 +777,7 @@ function KKCapNhatTrangThai() {
   const todo = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return !r[L['Loại khỏi DS']]; });
   if (!todo.length) { console.log('[KiemKe] Khong co don can cap nhat trang thai.'); return 0; }
   const doneSt = (typeof COD_CFG !== 'undefined' && COD_CFG.FINAL_STATUSES) || KK_DONE_STATUSES;
+  const atHub = (typeof COD_CFG !== 'undefined' && COD_CFG.AT_HUB_STATUSES) || ['delivering', 'delivery_fail', 'waiting_to_return', 'money_collect_delivering', 'storing'];
   const res = codFetchBatch_(todo.map(function (r) {
     return { label: 'common-info ' + r[L['Mã đơn']], apiUrl: COD_CFG.URL_COMMON_INFO,
       headers: codHeaders_(cfg, String(r[L['Bưu cục']])), payload: { order_code: String(r[L['Mã đơn']]) } };
@@ -788,8 +789,16 @@ function KKCapNhatTrangThai() {
     const d = res[i].json && res[i].json.data;
     if (res[i].error || !d) { fail++; return; }
     const st = String(d.partnerStatus || '').toLowerCase();
-    const vn = typeof codStatusVN_ === 'function' ? codStatusVN_(st) : st;
-    upd[String(r[L['Bưu cục']]) + '|' + String(r[L['Mã đơn']])] = [vn, doneSt.indexOf(st) >= 0 ? vn + ' lúc ' + now : ''];
+    const vn = kkStatusVN_(st);
+    const hub = String(r[L['Bưu cục']]).trim();
+    const cur = String(d.currentId || '').trim(), deliver = String(d.deliverId || '').trim();
+    let why = '';
+    if (doneSt.indexOf(st) >= 0) why = vn + ' lúc ' + now;
+    // Kho hien tai khac buu cuc: chi giu khi trang thai o buu cuc giao VA kho giao van la buu cuc nay (GHN cap nhat kho cham)
+    else if (cur && cur !== hub && !(atHub.indexOf(st) >= 0 && deliver === hub)) {
+      why = 'Đã rời bưu cục - kho hiện tại ' + cur + (deliver && deliver !== hub ? ', kho giao ' + deliver : '') + ' (' + now + ')';
+    }
+    upd[hub + '|' + String(r[L['Mã đơn']])] = [vn, why];
   });
   // Ghi lai (doc lai vi tri dong trong khoa, vi danh sach co the vua duoc chot lai)
   let closed = 0;
@@ -820,8 +829,15 @@ function KKCapNhatTrangThai() {
     }
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('KK_STATUS_AT', now + ' ' + day);
-  console.log('[KiemKe] Cap nhat trang thai ' + todo.length + ' don: loai ' + closed + ' don da giao/hoan' + (fail ? ', ' + fail + ' don chua tra duoc' : '') + '.');
+  console.log('[KiemKe] Cap nhat trang thai ' + todo.length + ' don: loai ' + closed + ' don (da giao/hoan/roi buu cuc)' + (fail ? ', ' + fail + ' don chua tra duoc' : '') + '.');
   return closed;
+}
+
+function kkStatusVN_(st) {
+  const extra = { storing: 'Lưu kho', ready_to_pick: 'Chờ lấy hàng', picking: 'Đang lấy hàng', picked: 'Đã lấy hàng',
+    transporting: 'Đang luân chuyển', sorting: 'Đang phân loại', cancel: 'Đã huỷ' };
+  if (typeof COD_STATUS_VN !== 'undefined' && COD_STATUS_VN[st]) return COD_STATUS_VN[st];
+  return extra[st] || (typeof codStatusVN_ === 'function' ? codStatusVN_(st) : st);
 }
 
 // Them tieu de cot moi (vd "Loai khoi DS") vao sheet da tao tu ban cu

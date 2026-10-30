@@ -58,7 +58,8 @@ const KK_RES = { OK: 'Đúng danh sách', OUT: 'Ngoài danh sách', DUP: 'Quét 
 
 const KK_USER_HEADERS = ['Mã NV', 'Họ tên', 'Vai trò', 'Bưu cục', 'PIN (mã hoá)', 'Trạng thái', 'Cập nhật lúc', 'Cập nhật bởi'];
 const KK_LIST_HEADERS = ['Ngày', 'Bưu cục', 'Mã đơn', 'COD', 'Mã NV giao', 'Tên NV giao', 'SĐT NV giao', 'Mã chuyến',
-  'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc', 'Loại khỏi DS'];
+  'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc', 'Loại khỏi DS', 'Quận/Huyện giao', 'Tỉnh giao',
+  'Lý do giao thất bại'];
 // Trang thai GHN (partnerStatus) -> don da xong, loai khoi danh sach can kiem. Lay theo COD_CFG.FINAL_STATUSES neu co.
 const KK_DONE_STATUSES = ['delivered', 'returned', 'cancel'];
 const KK_STATUS_EVERY_MIN = 10;   // trigger cap nhat trang thai don (phut) - du phong khi khong ai mo app
@@ -396,7 +397,8 @@ function kkSnapshot_(replace) {
   const c = function (name) { return head.indexOf(name); };
   const map = { hub: c('Bưu cục'), order: c('Mã đơn'), cod: c('COD'), dId: c('Mã NV giao'), dName: c('Tên NV giao'),
     dPhone: c('SĐT NV giao'), trip: c('Mã chuyến'), status: c('Trạng thái hiện tại'), att: c('Số lần giao'),
-    goods: c('Tên hàng'), ward: c('Phường giao') };
+    goods: c('Tên hàng'), ward: c('Phường giao'), dist: c('Quận/Huyện giao'), prov: c('Tỉnh giao'),
+    fails: c('Lý do giao thất bại (theo lần)') >= 0 ? c('Lý do giao thất bại (theo lần)') : c('Lý do lỗi (lần cuối trong chuyến)') };
   if (map.order < 0 || map.hub < 0) throw new Error('Sheet Data thiếu cột "Mã đơn" / "Bưu cục"');
   const g = function (r, k) { return map[k] >= 0 ? r[map[k]] : ''; };
   const now = new Date();
@@ -409,7 +411,8 @@ function kkSnapshot_(replace) {
     seen[hub + '|' + order] = true;
     const kd = keepDone[hub + '|' + order];
     rows.push([day, hub, order, Number(g(r, 'cod')) || 0, String(g(r, 'dId')).trim(), g(r, 'dName'), String(g(r, 'dPhone')),
-      g(r, 'trip'), kd ? kd[0] : g(r, 'status'), g(r, 'att'), String(g(r, 'goods')).slice(0, 200), g(r, 'ward'), now, kd ? kd[1] : '']);
+      g(r, 'trip'), kd ? kd[0] : g(r, 'status'), g(r, 'att'), String(g(r, 'goods')).slice(0, 500), g(r, 'ward'), now, kd ? kd[1] : '',
+      g(r, 'dist'), g(r, 'prov'), String(g(r, 'fails')).slice(0, 2000)]);
   });
   kkEnsureHeaders_(sh, KK_LIST_HEADERS);
   if (firstToday) sh.deleteRows(firstToday, last - firstToday + 1);
@@ -457,7 +460,8 @@ function kkList_(me) {
       return { hub: String(r[L['Bưu cục']]), hubName: (hubs[r[L['Bưu cục']]] || {}).name || '', order: String(r[L['Mã đơn']]),
         cod: Number(r[L['COD']]) || 0, driverId: String(r[L['Mã NV giao']]), driverName: r[L['Tên NV giao']],
         driverPhone: String(r[L['SĐT NV giao']]), trip: r[L['Mã chuyến']], status: r[L['Trạng thái']],
-        attempts: r[L['Số lần giao']], goods: r[L['Tên hàng']], ward: r[L['Phường giao']], closed: String(r[L['Loại khỏi DS']] || '') };
+        attempts: r[L['Số lần giao']], goods: r[L['Tên hàng']], ward: r[L['Phường giao']], closed: String(r[L['Loại khỏi DS']] || ''),
+        district: r[L['Quận/Huyện giao']] || '', province: r[L['Tỉnh giao']] || '', fails: String(r[L['Lý do giao thất bại']] || '') };
     });
   // Don da giao thanh cong / hoan thanh cong -> khong con can kiem
   const orders = all.filter(function (o) { return !o.closed; });

@@ -98,8 +98,6 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .selfie .cd { position: absolute; inset: 0; display: grid; place-items: center; font-size: 72px; font-weight: 800; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.6); pointer-events: none; }
 .selfie img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #111; }
 .guide { padding-left: 20px; margin: 0 0 10px; font-size: 14px; line-height: 1.5; } .guide li { margin-bottom: 10px; }
-.altqr { margin-top: 12px; font-size: 13px; } .altqr summary { cursor: pointer; text-align: center; color: var(--ink-2); text-decoration: underline; list-style: none; }
-.altqr summary::-webkit-details-marker { display: none; } .altqr .qr { margin-top: 8px; }
 .or { text-align: center; font-size: 12px; color: var(--ink-3); margin: 8px 0 6px; }
 .qr { width: 190px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 4px; } .qr svg { width: 100%; height: auto; display: block; }
 .key { display: flex; gap: 8px; align-items: center; } .key code { flex: 1; font-size: 13.5px; background: var(--bg); padding: 9px 10px; border-radius: 8px; word-break: break-all; letter-spacing: .5px; }
@@ -502,8 +500,7 @@ function viewLogin(msg) {
       <div class="field"><label for="lMa">Mã nhân viên</label><input id="lMa" name="kk-ma-${Date.now()}" inputmode="numeric" autocomplete="off" required></div>
       <div class="field"><label for="lPin">Mã 6 số trên Authenticator</label>
         <input id="lPin" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\\d{6}" placeholder="••••••" required>
-        <div class="hint">${OS === 'ios' ? 'Chạm ô này: bàn phím iPhone tự gợi ý <b>mã xác minh</b>. Hoặc mở app Authenticator, mục <b>Kiem ke COD</b>.'
-          : 'Mở app Authenticator, mục <b>Kiem ke COD</b>, chạm mã để sao chép rồi dán vào đây.'} Mã đổi mỗi 30 giây.</div></div>
+        <div class="hint">Mở app Google Authenticator / Microsoft Authenticator, mục <b>Kiem ke COD</b>. Mã đổi mỗi 30 giây.</div></div>
       <div class="err" id="lErr">${esc(msg || '')}</div>
       <button class="btn primary block" id="lBtn">Đăng nhập</button>
     </form>
@@ -574,28 +571,18 @@ function renderEnroll(err) {
     ${EN.selfie ? `<div class="row"><button class="btn light" id="eRe" style="flex:1">Quay lại</button><button class="btn primary" id="eNext" style="flex:1">Tiếp tục</button></div>`
       : `<button class="btn primary block" id="eShoot">Quay xác minh khuôn mặt</button>`}`;
   else {
-    const qrBox = `<div class="qr" id="eQr">${loader('Đang tạo mã QR', 2, true)}</div>`;
-    const steps = OS === 'ios' ? `
-      <li>Bấm nút dưới, iPhone hỏi <b>"Mở trong Mật khẩu?"</b> → bấm <b>Mở</b>.
-        <a class="btn primary block" id="eAdd" href="${esc(st.uri)}" style="margin:8px 0">Thêm mã xác minh vào iPhone</a></li>
-      <li>Trong app <b>Mật khẩu</b>: chọn lưu vào <b>mục mới</b>, ô trang web nhập <b>kiemke-cod.vercel.app</b> → <b>Lưu</b>.
-        <div class="hint">Đã cài Google Authenticator thì app đó mở thay — bấm Thêm tài khoản là xong.</div></li>
-      <li>Quay lại Safari (bấm <b>◀ Safari</b> góc trên bên trái), chạm ô dưới: bàn phím hiện sẵn <b>mã xác minh</b> → chạm để điền.</li>`
-      : OS === 'android' ? `
-      <li>Cài <b>Google Authenticator</b> từ <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener">CH Play</a> (nếu chưa có).</li>
-      <li>Bấm nút dưới → app mở ra, bấm <b>Thêm tài khoản / OK</b>.
-        <a class="btn primary block" id="eAdd" href="${esc(st.uri)}" style="margin:8px 0">Thêm vào Google Authenticator</a></li>
-      <li>Trong app, <b>chạm vào mã 6 số</b> để sao chép → quay lại trình duyệt → <b>dán</b> vào ô dưới.</li>`
-      : `
-      <li>Trên điện thoại: cài <b>Google Authenticator</b> (<a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener">iPhone</a> ·
-        <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener">Android</a>), hoặc dùng camera iPhone quét luôn.</li>
-      <li>Mở app → <b>+</b> → <b>Quét mã QR</b>, quét mã này:${qrBox}</li>
-      <li>Nhập mã 6 số đang hiện trên app vào ô dưới.</li>`;
+    const steps = `
+      <li>Cài app <b>Google Authenticator</b> (<a href="https://apps.apple.com/app/google-authenticator/id388497605" target="_blank" rel="noopener">iPhone</a> ·
+        <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" rel="noopener">Android</a>) hoặc Microsoft Authenticator.</li>
+      <li>Thêm tài khoản <b>Kiem ke COD</b>: mở Authenticator → <b>+</b> → <b>Quét mã QR</b>, quét mã này:
+        <div class="qr" id="eQr" style="margin-top:8px">${loader('Đang tạo mã QR', 2, true)}</div>
+        ${OS !== 'desktop' ? `<div class="or">Chỉ có 1 điện thoại (đang mở trang này trên chính máy đó)?</div>
+        <a class="btn light block" id="eAdd" href="${esc(st.uri)}">Mở Authenticator để thêm tài khoản</a>` : ''}</li>
+      <li>Nhập mã 6 số đang hiện trên app để xác nhận:</li>`;
     body = `${who}<ol class="guide">${steps}</ol>
     <form id="e3"><input id="eCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="••••••" required>
       <div class="err" id="eErr">${esc(err || '')}</div>
       <button class="btn primary block" id="eBtn">Xác nhận và đăng nhập</button></form>
-    ${OS !== 'desktop' ? `<details class="altqr"><summary>Thêm bằng điện thoại khác? Hiện mã QR</summary>${qrBox}</details>` : ''}
     <div class="hint" id="eLeft" style="text-align:center;margin-top:8px"></div>`;
   }
   $('#app').innerHTML = `<div class="login"><div class="card"><h1>Kích hoạt Authenticator</h1>${enrollSteps()}${body}

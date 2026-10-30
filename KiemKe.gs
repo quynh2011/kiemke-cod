@@ -61,7 +61,9 @@ const KK_LIST_HEADERS = ['Ngày', 'Bưu cục', 'Mã đơn', 'COD', 'Mã NV giao
   'Trạng thái', 'Số lần giao', 'Tên hàng', 'Phường giao', 'Chốt lúc', 'Loại khỏi DS'];
 // Trang thai GHN (partnerStatus) -> don da xong, loai khoi danh sach can kiem. Lay theo COD_CFG.FINAL_STATUSES neu co.
 const KK_DONE_STATUSES = ['delivered', 'returned', 'cancel'];
-const KK_STATUS_EVERY_MIN = 30;   // trigger cap nhat trang thai don (phut)
+const KK_STATUS_EVERY_MIN = 10;   // trigger cap nhat trang thai don (phut) - du phong khi khong ai mo app
+const KK_STATUS_FRESH_SEC = 180;  // don vua tra GHN trong 3 phut -> khong tra lai (giam tai)
+const KK_STATUS_MAX_PER_CALL = 120; // so don toi da tra trong 1 lan goi tu app (tranh qua 60s); app tu goi tiep
 const KK_RESULT_HEADERS = ['Thời gian', 'Ngày', 'Bưu cục', 'Mã đơn', 'Kết quả', 'COD', 'Mã NV giao', 'Tên NV giao',
   'Mã chuyến', 'Mã người kiểm', 'Tên người kiểm', 'Vai trò', 'Ảnh', 'File ảnh', 'File ảnh nhỏ', 'Số lần đọc khớp',
   'Thiết bị', 'Nội dung mã quét'];
@@ -108,6 +110,7 @@ function kkHandle_(b) {
     const me = kkAuth_(b.token);
     if (a === 'me') return { ok: true, user: kkPublicUser_(me) };
     if (a === 'list') return kkList_(me);
+    if (a === 'refresh') return kkRefreshMine_(me);
     if (a === 'scan') return kkScan_(me, b);
     if (a === 'report') return kkReport_(me, b);
     if (a === 'photo') return kkPhoto_(me, b);
@@ -468,7 +471,8 @@ function kkList_(me) {
       checked[code] = { time: kkTime_(r[R['Thời gian']]), by: r[R['Tên người kiểm']], thumb: r[R['File ảnh nhỏ']], photo: r[R['File ảnh']] };
     } else if (r[R['Kết quả']] === KK_RES.OUT && (sc.all || String(r[R['Mã người kiểm']]) === me.ma ||
                kkInScope_(sc, r[R['Bưu cục']], ''))) {
-      extra.push({ order: code, time: kkTime_(r[R['Thời gian']]), by: r[R['Tên người kiểm']], thumb: r[R['File ảnh nhỏ']], photo: r[R['File ảnh']] });
+      extra.push({ order: code, hub: String(r[R['Bưu cục']] || ''), hubName: (hubs[r[R['Bưu cục']]] || {}).name || '', time: kkTime_(r[R['Thời gian']]),
+        by: r[R['Tên người kiểm']], thumb: r[R['File ảnh nhỏ']], photo: r[R['File ảnh']] });
     }
   });
   return { ok: true, day: day, user: kkPublicUser_(me), orders: orders, checked: checked, extra: extra, closed: closed,
@@ -484,6 +488,9 @@ function kkScan_(me, b) {
   if (!b.photo) throw new Error('Thiếu ảnh chụp đơn hàng');
   const sc = kkScope_(me);
   const day = kkToday_(), dn = kkDayNum_(day);
+  // Tra GHN ngay don vua quet (realtime): da giao / hoan / roi buu cuc -> loai truoc khi ghi ket qua. Loi GHN thi bo qua.
+  try { kkRefreshStatus_(function (r) { return String(r[L['Mã đơn']]) === code; }, 5, true); }
+  catch (e) { console.log('[KiemKe] Khong tra duoc trang thai ' + code + ': ' + e.message); }
 
   const lock = kkLock_();
   lock.waitLock(30000);
@@ -768,14 +775,45 @@ function KKCaiTrigger() {
 // Dung lai ham goi API cua COD_check.gs (cung project): codReadConfig_, codHeaders_, codFetchBatch_
 // ================================================================
 function KKCapNhatTrangThai() {
+  const r = kkRefreshStatus_(function () { return true; }, 0, false);
+  console.log('[KiemKe] Cap nhat trang thai ' + r.checked + ' don: loai ' + r.closed + ' don (da giao/hoan/roi buu cuc)' +
+    (r.fail ? ', ' + r.fail + ' don chua tra duoc' : '') + '.');
+  return r.closed;
+}
+
+// Tu app: tra GHN ngay cac don trong pham vi cua nguoi dung (bo qua don vua tra trong KK_STATUS_FRESH_SEC giay)
+function kkRefreshMine_(me) {
+  const sc = kkScope_(me);
+  const r = kkRefreshStatus_(function (row) { return kkInScope_(sc, row[L['Bưu cục']], row[L['Mã NV giao']]); },
+    KK_STATUS_MAX_PER_CALL, true);
+  const out = kkList_(me);
+  out.refresh = r;
+  return out;
+}
+
+// Tra trang thai GHN (common-info) cho cac don hom nay thoa pick(row), ghi vao KK_DanhSach.
+// limit: so don toi da (0 = khong gioi han); skipFresh: bo qua don vua tra gan day
+function kkRefreshStatus_(pick, limit, skipFresh) {
   if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') {
     throw new Error('Cần file COD_check.gs trong cùng project để tra trạng thái đơn');
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const cfg = codReadConfig_(ss);
   const day = kkToday_(), dn = kkDayNum_(day);
-  const todo = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return !r[L['Loại khỏi DS']]; });
-  if (!todo.length) { console.log('[KiemKe] Khong co don can cap nhat trang thai.'); return 0; }
+  const cache = CacheService.getScriptCache();
+  let todo = kkReadDays_(KK_SH_LIST, KK_LIST_HEADERS, dn, dn).filter(function (r) { return !r[L['Loại khỏi DS']] && pick(r); });
+  if (skipFresh && todo.length) {
+    const keys = todo.map(function (r) { return 'kko_' + r[L['Bưu cục']] + '_' + r[L['Mã đơn']]; });
+    const hit = {};
+    for (let i = 0; i < keys.length; i += 500) Object.assign(hit, cache.getAll(keys.slice(i, i + 500)));
+    todo = todo.filter(function (r, i) { return !hit[keys[i]]; });
+  }
+  // Uu tien don COD cao
+  todo.sort(function (a, b) { return (Number(b[L['COD']]) || 0) - (Number(a[L['COD']]) || 0); });
+  const remain = limit && todo.length > limit ? todo.length - limit : 0;
+  if (limit) todo = todo.slice(0, limit);
+  if (!todo.length) return { checked: 0, closed: 0, fail: 0, remain: 0, at: PropertiesService.getScriptProperties().getProperty('KK_STATUS_AT') || '' };
+  if (typeof COD_CONC_ !== 'undefined' && skipFresh) COD_CONC_ = Math.max(COD_CONC_ || 0, 12); // nguoi dung dang cho -> chay nhanh hon
   const doneSt = (typeof COD_CFG !== 'undefined' && COD_CFG.FINAL_STATUSES) || KK_DONE_STATUSES;
   const atHub = (typeof COD_CFG !== 'undefined' && COD_CFG.AT_HUB_STATUSES) || ['delivering', 'delivery_fail', 'waiting_to_return', 'money_collect_delivering', 'storing'];
   const res = codFetchBatch_(todo.map(function (r) {
@@ -829,8 +867,10 @@ function KKCapNhatTrangThai() {
     }
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('KK_STATUS_AT', now + ' ' + day);
-  console.log('[KiemKe] Cap nhat trang thai ' + todo.length + ' don: loai ' + closed + ' don (da giao/hoan/roi buu cuc)' + (fail ? ', ' + fail + ' don chua tra duoc' : '') + '.');
-  return closed;
+  const fresh = {};
+  todo.forEach(function (r, i) { if (!res[i].error) fresh['kko_' + r[L['Bưu cục']] + '_' + r[L['Mã đơn']]] = '1'; });
+  if (Object.keys(fresh).length) cache.putAll(fresh, KK_STATUS_FRESH_SEC);
+  return { checked: todo.length, closed: closed, fail: fail, remain: remain, at: now + ' ' + day };
 }
 
 function kkStatusVN_(st) {

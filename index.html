@@ -79,6 +79,12 @@ main { max-width: 720px; margin: 0 auto; padding: 14px 16px calc(var(--nav) + en
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 4px; text-align: center;
   cursor: pointer; font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
 .stat:active { transform: scale(.97); } .stat.on { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+.hubsel { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.hubsel label { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.hubsel select { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  font: inherit; font-size: 14.5px; color: var(--ink); }
+.refreshline { text-align: center; font-size: 12.5px; color: var(--ink-2); padding: 0 0 8px; }
+.hubtag { font-weight: 600; color: var(--ink); }
 .closedline { display: block; width: 100%; text-align: center; font-size: 12.5px; color: var(--ink-2); background: none; border: 0;
   padding: 2px 0 8px; cursor: pointer; font-family: inherit; } .closedline b { color: var(--ink); }
 .stat b { display: block; font-size: 22px; line-height: 1.15; }
@@ -284,10 +290,11 @@ const Demo = (function () {
       }
       const u = me(b.token), sc = scope(u);
       const mine = orders.filter(sc);
+      if (b.action === 'refresh') b.action = 'list';
       if (b.action === 'list') {
         const checked = {}, extra = [];
         results.forEach(r => { if (r.result === 'Đúng danh sách' && mine.some(o => o.order === r.order) && !checked[r.order]) checked[r.order] = r;
-          else if (r.result === 'Ngoài danh sách' && (u.role === 'QUAN_LY' || r.by === u.ten)) extra.push(r); });
+          else if (r.result === 'Ngoài danh sách' && (u.role === 'QUAN_LY' || r.by === u.ten)) extra.push(Object.assign({ hubName: (hubs.find(h => h.code === r.hub) || {}).name }, r)); });
         const closed = [Object.assign(mk('22524000', 'GYMDONE01', 3100000, '3179060', 'Trần Thị Thìn', '0982995305', '26A22524000CGQX20', 'Đã giao', 1, 'Tai nghe'),
           { closed: 'Đã giao lúc 09:30' })].filter(sc);
         return { ok: true, day: isoToVN(todayISO()), user: pub(u), orders: mine, checked, extra, closed, statusAt: '09:30' };
@@ -377,7 +384,7 @@ const Q = (function () {
 // =====================================================================
 const S = {
   token: store.get('token', ''), user: store.get('user', null), tab: 'scan',
-  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0,
+  data: null, listTab: 'miss', search: '', thumbs: {}, pending: 0, hub: store.get('hub', ''), refreshing: false,
   scanner: null, scanning: false, torch: false, busy: false, cand: null,
   report: null, rep: { from: todayISO(), to: todayISO(), hub: '', group: 'hub', filter: 'miss' }, admin: null
 };
@@ -475,32 +482,71 @@ function setPending(n) { S.pending = n; const b = $('#pendBadge'); if (b) { b.hi
 // =====================================================================
 // DU LIEU DANH SACH
 // =====================================================================
+function setData(r) {
+  S.data = r; S.user = r.user; store.set('user', r.user);
+  S.byCode = {}; r.orders.forEach(o => { S.byCode[o.order] = o; });
+  if (S.hub && !hubList().some(h => h.code === S.hub)) { S.hub = ''; store.set('hub', ''); }
+  if (S.tab === 'scan') renderStats(); else if (S.tab === 'list') renderList();
+}
 async function loadList(silent) {
+  try { setData(await api('list')); refreshStatus(); } catch (e) { if (!silent) onApiError(e); }
+}
+// Realtime: tra GHN ngay cac don trong pham vi (da giao / hoan / roi buu cuc -> tu loai). Chay ngam, khong chan man hinh.
+async function refreshStatus() {
+  if (S.refreshing || !S.token) return;
+  S.refreshing = true; paintRefresh();
   try {
-    const r = await api('list');
-    S.data = r; S.user = r.user; store.set('user', r.user);
-    S.byCode = {}; r.orders.forEach(o => { S.byCode[o.order] = o; });
-    if (S.tab === 'scan') renderStats(); else if (S.tab === 'list') renderList();
-  } catch (e) { if (!silent) onApiError(e); }
+    for (let i = 0; i < 6; i++) {
+      const r = await api('refresh');
+      setData(r);
+      if (r.refresh && r.refresh.closed) toast('Đã loại ' + r.refresh.closed + ' đơn vừa giao / hoàn / rời bưu cục');
+      if (!r.refresh || !r.refresh.remain) break;
+    }
+  } catch (e) { if (e.auth) onApiError(e); }
+  finally { S.refreshing = false; paintRefresh(); }
+}
+function paintRefresh() { document.querySelectorAll('.refreshline').forEach(el => { el.hidden = !S.refreshing; }); }
+
+// Loc theo buu cuc (AM / quan ly / NV buu cuc nhieu BC)
+function hubList() {
+  const d = S.data || {}, m = {};
+  const add = (code, name) => { if (!code) return; m[code] = m[code] || { code, name: name || '', need: 0, miss: 0 }; if (name) m[code].name = name; };
+  (d.orders || []).forEach(o => { add(o.hub, o.hubName); m[o.hub].need++; if (!(d.checked || {})[o.order]) m[o.hub].miss++; });
+  (d.closed || []).forEach(o => add(o.hub, o.hubName));
+  (d.extra || []).forEach(o => add(o.hub, o.hubName));
+  return Object.values(m).sort((a, b) => b.miss - a.miss || a.code.localeCompare(b.code));
+}
+function hubLabel(o) { return esc(o.hub || '') + (o.hubName ? ' · ' + esc(o.hubName) : ''); }
+function dv() {
+  const d = S.data || { orders: [], checked: {}, extra: [], closed: [] };
+  if (!S.hub) return d;
+  const f = x => x.hub === S.hub;
+  return Object.assign({}, d, { orders: d.orders.filter(f), extra: (d.extra || []).filter(f), closed: (d.closed || []).filter(f) });
 }
 function counts() {
-  const d = S.data || { orders: [], checked: {}, extra: [], closed: [] };
+  const d = dv();
   const need = d.orders.length, done = d.orders.filter(o => d.checked[o.order]).length;
   return { need, done, miss: need - done, extra: d.extra.length, closed: (d.closed || []).length };
 }
 // Bam vao o thong ke -> mo danh sach chi tiet tuong ung
 function statsHTML() {
   const c = counts(), on = t => S.tab === 'list' && S.listTab === t ? ' on' : '';
-  const d = S.data || {};
-  return `<div class="stats">
+  const d = S.data || {}, hl = hubList();
+  const sel = hl.length > 1 || S.hub ? `<div class="hubsel"><label for="hubSel">Bưu cục</label>
+    <select id="hubSel"><option value="">Tất cả ${hl.length} bưu cục</option>${hl.map(h =>
+      `<option value="${esc(h.code)}"${h.code === S.hub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (thiếu ${h.miss}/${h.need})</option>`).join('')}</select></div>` : '';
+  return `${sel}<div class="stats">
     <button class="stat${on('all')}" data-go="all"><b class="num">${c.need}</b><span>Cần kiểm</span></button>
     <button class="stat ok${on('ok')}" data-go="ok"><b class="num">${c.done}</b><span>Đã kiểm</span></button>
     <button class="stat miss${on('miss')}" data-go="miss"><b class="num">${c.miss}</b><span>Còn thiếu</span></button>
     <button class="stat bad${on('bad')}" data-go="bad"><b class="num">${c.extra}</b><span>Ngoài DS</span></button></div>
     <div class="bar"><i style="width:${c.need ? c.done / c.need * 100 : 0}%"></i></div>
+    <div class="refreshline"${S.refreshing ? '' : ' hidden'}>Đang cập nhật trạng thái đơn từ GHN…</div>
     ${c.closed ? `<button class="closedline" data-go="closed">Đã loại <b>${c.closed}</b> đơn (đã giao / hoàn / rời bưu cục)${d.statusAt ? ' · cập nhật ' + esc(d.statusAt.split(' ')[0]) : ''} ›</button>` : ''}`;
 }
 function bindStats(root) {
+  const hs = (root || document).querySelector('#hubSel');
+  if (hs) hs.onchange = () => { S.hub = hs.value; store.set('hub', S.hub); if (S.tab === 'list') renderList(); else renderStats(); };
   (root || document).querySelectorAll('[data-go]').forEach(b => b.onclick = () => {
     S.listTab = b.dataset.go;
     if (S.tab === 'list') viewList(); else go('list');
@@ -758,15 +804,15 @@ function viewList() {
     <input class="inp" id="lSearch" placeholder="Tìm mã đơn, tên NV, chuyến, bưu cục…" value="${esc(S.search)}" style="margin-bottom:10px">
     <div class="h2"><span id="lTitle"></span><small id="lCount"></small></div><div id="lItems"></div>`;
   document.querySelectorAll('#lTabs [data-t]').forEach(b => b.onclick = () => { S.listTab = b.dataset.t; viewList(); });
-  $('#lReload').onclick = () => loadList().then(() => toast('Đã tải lại'));
+  $('#lReload').onclick = () => loadList().then(() => toast('Đã tải lại, đang cập nhật trạng thái GHN…'));
   $('#lSearch').oninput = e => { S.search = e.target.value; renderList(); };
   renderList();
 }
 function renderList() {
   const box = $('#lItems'); if (!box) return;
   $('#stats2').innerHTML = statsHTML(); bindStats($('#stats2'));
-  const d = S.data;
-  if (!d) { box.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
+  if (!S.data) { box.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
+  const d = dv();
   const q = S.search.trim().toUpperCase();
   const m = o => !q || [o.order, o.driverName, o.trip, o.driverId, o.hub, o.hubName].join(' ').toUpperCase().indexOf(q) >= 0;
   let html = '', n = 0;
@@ -775,12 +821,13 @@ function renderList() {
   if (S.listTab === 'closed') {
     const xs = (d.closed || []).filter(m).sort((a, b) => b.cod - a.cod); n = xs.length;
     html = xs.map(o => `<div class="order"><div class="body"><div class="o1"><span class="ocode">${esc(o.order)}</span><span class="cod num">${money(o.cod)} đ</span></div>
-      <div class="sub">${esc(o.driverName || 'Không rõ NV')} · ${esc(o.hub)} · ${esc(o.trip || '')}</div>
+      <div class="sub"><span class="hubtag">${hubLabel(o)}</span></div>
+      <div class="sub">${esc(o.driverName || 'Không rõ NV')} · ${esc(o.trip || '')}</div>
       <span class="tag ${/^Đã rời/.test(o.closed) ? 'dup' : 'ok'}">${esc(o.closed)}</span></div></div>`).join('');
   } else if (S.listTab === 'bad') {
     const xs = d.extra.filter(x => !q || x.order.indexOf(q) >= 0); n = xs.length;
     html = xs.map(x => `<div class="order bad"><div class="thumb click" data-thumb="${esc(x.thumb)}" data-photo="${esc(x.photo)}" data-cap="${esc(x.order + ' · ' + x.time + ' · ' + (x.by || ''))}"></div>
-      <div class="body"><div class="ocode">${esc(x.order)}</div><div class="sub">${esc(x.time)} · ${esc(x.by || '')}</div><span class="tag bad">Ngoài danh sách</span></div></div>`).join('');
+      <div class="body"><div class="ocode">${esc(x.order)}</div>${x.hub ? `<div class="sub"><span class="hubtag">${hubLabel(x)}</span></div>` : ''}<div class="sub">${esc(x.time)} · ${esc(x.by || '')}</div><span class="tag bad">Ngoài danh sách</span></div></div>`).join('');
   } else {
     const xs = d.orders.filter(o => (S.listTab === 'all' || (S.listTab === 'ok' ? d.checked[o.order] : !d.checked[o.order])) && m(o))
       .sort((a, b) => b.cod - a.cod); n = xs.length;
@@ -788,7 +835,8 @@ function renderList() {
       return `<div class="order ${c ? 'ok' : 'miss'}">${c ? `<div class="thumb click" data-thumb="${esc(c.thumb)}" data-photo="${esc(c.photo)}" data-cap="${esc(o.order + ' · ' + c.time + ' · ' + c.by)}"></div>` : ''}
         <div class="body"><div class="o1"><span class="ocode">${esc(o.order)}</span><span class="cod num">${money(o.cod)} đ</span></div>
         <div class="sub">${esc(o.driverName || 'Không rõ NV')}${o.driverPhone ? ' · <a href="tel:' + esc(o.driverPhone) + '">' + esc(o.driverPhone) + '</a>' : ''}</div>
-        <div class="sub">${esc(o.hub)} · ${esc(o.trip || '')} · ${esc(o.status || '')}${o.attempts ? ' · giao ' + esc(o.attempts) + ' lần' : ''}</div>
+        <div class="sub"><span class="hubtag">${hubLabel(o)}</span></div>
+        <div class="sub">${esc(o.trip || '')} · ${esc(o.status || '')}${o.attempts ? ' · giao ' + esc(o.attempts) + ' lần' : ''}</div>
         <span class="tag ${c ? 'ok' : 'miss'}">${c ? 'Đã kiểm ' + esc(c.time) + ' · ' + esc(c.by) : 'Chưa thấy'}</span></div></div>`; }).join('');
   }
   $('#lTitle').textContent = title; $('#lCount').textContent = n + ' đơn';

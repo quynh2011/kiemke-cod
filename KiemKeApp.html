@@ -130,6 +130,7 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .bllegend b { color: var(--ink); }
 .qtab { padding: 14px 8px; } .qhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .qhead b { font-size: 16px; } .qhead span { font-size: 12px; color: var(--ink-2); text-align: right; }
+.qtime { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin: -4px 0 10px; } .qtime b { color: var(--ink); }
 .qtbl th { white-space: nowrap; text-align: center; } .qtbl th:first-child { text-align: left; }
 .tbl.qtbl { font-size: 13.5px; } .tbl.qtbl th, .tbl.qtbl td { padding: 7px 3px; white-space: nowrap; }
 .tbl.qtbl td:first-child, .tbl.qtbl th:first-child { position: sticky; left: 0; background: var(--card); z-index: 1; min-width: 88px; max-width: 112px; padding-left: 8px; white-space: normal; }
@@ -493,7 +494,7 @@ const Demo = (function () {
           const o = withLog(mineQ.find(x => x.order === b.order)); return { ok: true, order: b.order, handle: o.handle, logs: o.logs };
         }
         if (b.action === 'qhRefresh' && b.order) { const o = withLog(mineQ.find(x => x.order === b.order)); return { ok: true, order: o, logs: o.logs, refresh: { checked: 1 } }; }
-        return { ok: true, srcAt: '30/10/2026 18:25:20', today: isoToVN(todayISO()), statuses: QHS, canEdit: lv === 'edit', orders: mineQ.map(withLog), refresh: { checked: 0, remain: 0 } };
+        return { ok: true, srcAt: '30/10/2026 18:25:20', today: isoToVN(todayISO()), statuses: QHS, statusAt: new Date().toTimeString().slice(0, 5) + ' ' + isoToVN(todayISO()), canEdit: lv === 'edit', orders: mineQ.map(withLog), refresh: { checked: 0, remain: 0 } };
       }
       if (b.action === 'me') return { ok: true, user: pub(u) };
       if (b.action === 'refresh') b.action = 'list';
@@ -1662,7 +1663,8 @@ function renderQh() {
     <div class="bllegend">${bls.map(b => `<span><i class="${blTone(b)}"></i>Quá ${esc(blLabel(b))} <b>${blN[b]}</b></span>`).join('')}</div>
     <div id="qhLive" class="refreshline"></div>
     <div class="card qtab">
-      <div class="qhead"><b>Báo cáo đơn quá hạn</b><span>${nA} đơn · dữ liệu ${esc(d.srcAt || '—')}</span></div>
+      <div class="qhead"><b>Báo cáo đơn quá hạn</b><span>${nA} đơn</span></div>
+      <div class="qtime"><span>Dữ liệu sheet Quahan: <b>${esc(d.srcAt || '—')}</b></span><span>Trạng thái GHN cập nhật: <b>${esc(d.statusAt || '—')}</b></span></div>
       <div class="seg" style="margin-bottom:10px">${QH_GROUPS.map(x => `<button data-qg="${x[0]}" class="${g === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
       <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th>${bls.map(b => `<th>${b ? blTag(b) : '(trống)'}</th>`).join('')}<th>Đã gán</th><th>Dứt điểm</th><th>Chưa XL</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><div class="nm">${esc(r.name)}</div>${r.sub ? `<div class="k">${esc(r.sub)}</div>` : ''}</td>

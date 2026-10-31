@@ -1554,7 +1554,7 @@ const QH_F = [
   { k: 'backlog', label: 'Backlog', val: o => o.backlog || '', name: v => v ? 'Quá ' + blLabel(v) : '(trống)' },
   { k: 'status', label: 'Trạng thái GHN', val: o => o.status || '(chưa tra)' },
   { k: 'handle', label: 'Tình trạng xử lý', val: o => o.handle ? o.handle.status : 'Chưa xử lý' },
-  { k: 'driver', label: 'NV giao gần nhất', val: o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ)' }
+  { k: 'driver', label: 'NV giao', val: o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ)' }
 ];
 function qhPass(o, skip) { return (!S.qhHub || o.hub === S.qhHub) && QH_F.every(F => F.k === skip || !S.qhF[F.k] || F.val(o) === S.qhF[F.k]); }
 function qhCounts(list, today) {
@@ -1587,7 +1587,7 @@ function paintQhRefresh() { const el = $('#qhLive'); if (el) el.innerHTML = S.qh
 const QH_GROUPS = [['driver', 'NV giao'], ['hub', 'Bưu cục'], ['handle', 'Tình trạng XL'], ['group', 'Nhóm đơn']];
 const drvName = o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ NV)';
 function qhRowKey(o, g) {
-  if (g === 'driver') return [o.hub + '|' + drvName(o), drvName(o), S.qhHub ? '' : 'BC ' + o.hub];
+  if (g === 'driver') return [o.hub + '|' + (o.driverId || drvName(o)), drvName(o), (o.driverId ? 'Mã ' + o.driverId : '') + (S.qhHub ? '' : (o.driverId ? ' · ' : '') + 'BC ' + o.hub)];
   if (g === 'hub') return [o.hub, String(o.hubName || o.hub).replace(/^\(\w+\)\s*/, ''), o.hub];
   if (g === 'handle') return [o.handle ? o.handle.status : 'Chưa xử lý', o.handle ? o.handle.status : 'Chưa xử lý', ''];
   return [o.group || '(trống)', o.group || '(trống)', ''];
@@ -1695,7 +1695,7 @@ function qhOpen(code, again) {
       <dt>Giá trị hàng</dt><dd class="num" style="color:var(--brand);font-weight:700">${o.value ? money(o.value) + ' đ' : '—'}</dd>
       <dt>Số lần giao</dt><dd>${o.attempts !== '' && o.attempts != null ? esc(o.attempts) + ' lần' : '—'}</dd>
       <dt>Lý do giao thất bại</dt><dd>${o.fails ? `<div class="fails">${esc(o.fails)}</div>` : '—'}</dd>
-      <dt>NV giao gần nhất</dt><dd>${esc(o.driver || '—')}</dd>
+      <dt>NV giao</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
       <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
       <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}${o.deliver && o.deliver !== o.hub ? '<br><span class="sub">Kho giao: ' + esc(o.deliver) + '</span>' : ''}</dd>
       <dt>Thao tác cuối</dt><dd>${esc(o.last || '—')}</dd>

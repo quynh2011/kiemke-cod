@@ -13,7 +13,9 @@ const QH_SRC = 'Quahan';
 const QH_SH_DETAIL = 'QH_ChiTiet';
 const QH_SH_LOG = 'QH_XuLy';
 const QH_DETAIL_HEADERS = ['Mã đơn', 'Mã bưu cục', 'Trạng thái', 'Kho hiện tại', 'Kho giao', 'Giá trị hàng', 'Số lần giao',
-  'Lý do giao thất bại', 'NV giao gần nhất', 'Thao tác cuối', 'Cập nhật GHN lúc'];
+  'Lý do giao thất bại', 'NV giao gần nhất', 'Thao tác cuối', 'Cập nhật GHN lúc', 'Mã NV giao', 'SĐT NV giao', 'Mã chuyến'];
+// NV giao that cua don (ma NV, ten, SDT, ma chuyen) - chuan hon doan tu lich su
+const QH_URL_DELIVERY = 'https://nhanh-api.ghn.vn/api/lastmile/delivery/get-delivery-info';
 const QH_LOG_HEADERS = ['Thời gian', 'Mã bưu cục', 'Mã đơn', 'Tình trạng xử lý', 'Hẹn ngày', 'Ghi chú', 'Mã người cập nhật',
   'Tên người cập nhật', 'Vai trò'];
 // Tinh trang xu ly NVXL chon (need: 'date' = bat buoc chon ngay hen, 'note' = bat buoc ghi chu)
@@ -43,6 +45,7 @@ function qhHandle_(me, a, b) {
 function QHSetup() {
   kkEnsureHeaders_(kkSheet_(QH_SH_DETAIL, QH_DETAIL_HEADERS), QH_DETAIL_HEADERS);
   kkEnsureHeaders_(kkSheet_(QH_SH_LOG, QH_LOG_HEADERS), QH_LOG_HEADERS);
+  QHCaiTrigger();
   console.log('[QuaHan] Da tao sheet ' + QH_SH_DETAIL + ', ' + QH_SH_LOG);
 }
 
@@ -74,7 +77,8 @@ function qhDetailMap_() {
   if (sh.getLastRow() < 2) return out;
   sh.getRange(2, 1, sh.getLastRow() - 1, QH_DETAIL_HEADERS.length).getValues().forEach(function (r, i) {
     out[String(r[0]).trim()] = { row: i + 2, status: r[2], cur: String(r[3]), deliver: String(r[4]), value: Number(r[5]) || 0,
-      attempts: r[6], fails: String(r[7] || ''), driver: String(r[8] || ''), last: String(r[9] || ''), at: kkTime_(r[10]) };
+      attempts: r[6], fails: String(r[7] || ''), driver: String(r[8] || ''), last: String(r[9] || ''), at: kkTime_(r[10]),
+      driverId: String(r[11] || '').trim(), driverPhone: String(r[12] || ''), trip: String(r[13] || '') };
   });
   return out;
 }
@@ -92,13 +96,19 @@ function qhLogs_() {
   return by;
 }
 
+// Pham vi: quan ly tat ca; NV buu cuc / AM theo buu cuc; NV giao = don co Ma NV giao (get-delivery-info) la minh
+function qhInScope_(sc, o, det) {
+  return sc.all || !!sc.hubs[o.hub] || (!!sc.driver && ((det[o.order] || {}).driverId === sc.driver));
+}
+
 function qhList_(me) {
   const sc = kkScope_(me), hubs = kkHubs_();
   const src = qhSource_(), det = qhDetailMap_(), logs = qhLogs_();
-  const orders = src.rows.filter(function (o) { return sc.all || sc.hubs[o.hub]; }).map(function (o) {
+  const orders = src.rows.filter(function (o) { return qhInScope_(sc, o, det); }).map(function (o) {
     const d = det[o.order] || {}, lg = logs[o.order] || [];
     return Object.assign(o, { hubName: (hubs[o.hub] || {}).name || '', status: d.status || '', cur: d.cur || '', deliver: d.deliver || '',
       value: d.value || 0, attempts: d.attempts === undefined ? '' : d.attempts, fails: d.fails || '', driver: d.driver || '', last: d.last || '',
+      driverId: d.driverId || '', driverPhone: d.driverPhone || '', trip: d.trip || '',
       ghnAt: d.at || '', handle: lg.length ? lg[lg.length - 1] : null, logs: lg.slice(-10).reverse() });
   });
   return { ok: true, srcAt: src.at, orders: orders, statuses: QH_STATUSES, canEdit: kkMods_(me).quahan === 'edit',
@@ -107,18 +117,37 @@ function qhList_(me) {
 
 // Tra GHN cho don qua han trong pham vi. b.order = 1 don (popup, tra ngay). Con lai: bo qua don vua tra trong 3 phut.
 function qhRefresh_(me, b) {
-  if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') throw new Error('Cần file COD_check.gs trong cùng project để tra GHN');
   const sc = kkScope_(me), one = String(b.order || '').trim().toUpperCase();
+  const det0 = qhDetailMap_();
+  const info = qhRefreshCore_(function (o) { return qhInScope_(sc, o, det0) && (!one || o.order === one); }, one ? 1 : QH_MAX_PER_CALL, !!one);
+  if (one) return { ok: true, order: info.recs[0] || null, logs: (qhLogs_()[one] || []).slice(-10).reverse(), refresh: info.info };
+  return Object.assign(qhList_(me), { refresh: info.info });
+}
+
+// Trigger 10 phut/lan: tra GHN tat ca don qua han (de NV giao, bang tong hop luon co du lieu moi)
+function QHCapNhat() {
+  const r = qhRefreshCore_(function () { return true; }, 0, false);
+  console.log('[QuaHan] Tra GHN ' + r.info.checked + ' don' + (r.info.fail ? ', loi ' + r.info.fail : '') + '.');
+}
+function QHCaiTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'QHCapNhat') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('QHCapNhat').timeBased().everyMinutes(10).create();
+  console.log('[QuaHan] Da cai trigger cap nhat don qua han 10 phut/lan.');
+}
+
+// pick(o): chon don; limit: so don toi da (0 = khong gioi han); one: popup 1 don (tra ngay, ke ca vua tra)
+function qhRefreshCore_(pick, limit, one) {
+  if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') throw new Error('Cần file COD_check.gs trong cùng project để tra GHN');
   const cache = CacheService.getScriptCache();
-  let todo = qhSource_().rows.filter(function (o) { return (sc.all || sc.hubs[o.hub]) && (!one || o.order === one); });
+  let todo = qhSource_().rows.filter(pick);
   if (!one && todo.length) {
     const keys = todo.map(function (o) { return 'qho_' + o.order; }), hit = {};
     for (let i = 0; i < keys.length; i += 500) Object.assign(hit, cache.getAll(keys.slice(i, i + 500)));
     todo = todo.filter(function (o, i) { return !hit[keys[i]]; });
   }
-  const remain = todo.length > QH_MAX_PER_CALL ? todo.length - QH_MAX_PER_CALL : 0;
-  todo = todo.slice(0, QH_MAX_PER_CALL);
-  if (!todo.length) return one ? { ok: true, order: null, refresh: { checked: 0, remain: 0 } } : Object.assign(qhList_(me), { refresh: { checked: 0, remain: 0 } });
+  const remain = limit && todo.length > limit ? todo.length - limit : 0;
+  if (limit) todo = todo.slice(0, limit);
+  if (!todo.length) return { recs: [], info: { checked: 0, remain: 0, fail: 0 } };
   const cfg = codReadConfig_(SpreadsheetApp.getActiveSpreadsheet());
   if (typeof COD_CONC_ !== 'undefined' && !one) COD_CONC_ = Math.max(COD_CONC_ || 0, 12);
   const ci = codFetchBatch_(todo.map(function (o) {
@@ -128,10 +157,16 @@ function qhRefresh_(me, b) {
   const sig = {}, prev = cache.getAll(todo.map(function (o) { return 'qhsig_' + o.order; }));
   todo.forEach(function (o, i) {
     const d = ci[i].json && ci[i].json.data;
-    if (d) sig[o.order] = ['v2', d.partnerStatus, d.partnerAction, d.status, d.currentId].join('|'); // v2: tra lai lich su sau khi sua cach lay NV giao
+    if (d) sig[o.order] = ['v3', d.partnerStatus, d.partnerAction, d.status, d.currentId].join('|'); // v3: lay NV giao tu get-delivery-info
   });
   const det = qhDetailMap_();
-  const needH = todo.filter(function (o) { return sig[o.order] && (one || prev['qhsig_' + o.order] !== sig[o.order] || !det[o.order]); });
+  const needH = todo.filter(function (o) { return sig[o.order] && (one || prev['qhsig_' + o.order] !== sig[o.order] || !det[o.order] || !det[o.order].driverId); });
+  // NV giao that: get-delivery-info (ma NV, ten, SDT, ma chuyen)
+  const dr = needH.length ? codFetchBatch_(needH.map(function (o) {
+    return { label: 'get-delivery-info ' + o.order, apiUrl: QH_URL_DELIVERY, headers: codHeaders_(cfg, o.hub), payload: { orderCode: o.order } };
+  })) : [];
+  const drv = {};
+  needH.forEach(function (o, i) { const x = dr[i] && dr[i].json && dr[i].json.data; if (x && (x.driverId || x.driverName)) drv[o.order] = x; });
   const hr = needH.length ? codFetchBatch_(needH.map(function (o) {
     return { label: 'get-order-history ' + o.order, apiUrl: COD_CFG.URL_HISTORY, headers: codHeaders_(cfg, o.hub),
       payload: { orderCode: o.order, paging: { offset: 0, limit: 1000 } } };
@@ -147,7 +182,10 @@ function qhRefresh_(me, b) {
     const old = det[o.order] || {};
     const rec = { order: o.order, hub: o.hub, status: kkStatusVN_(String(d.partnerStatus || '').toLowerCase()), cur: String(d.currentId || ''),
       deliver: String(d.deliverId || ''), value: Number(d.orderValue) || 0, attempts: old.attempts === undefined ? '' : old.attempts,
-      fails: old.fails || '', driver: old.driver || '', last: old.last || '' };
+      fails: old.fails || '', driver: old.driver || '', last: old.last || '',
+      driverId: old.driverId || '', driverPhone: old.driverPhone || '', trip: old.trip || '' };
+    const x = drv[o.order];
+    if (x) { rec.driverId = String(x.driverId || ''); rec.driver = String(x.driverName || ''); rec.driverPhone = String(x.driverPhone || ''); rec.trip = String(x.tripCode || ''); }
     const ev = hist[o.order];
     if (ev && ev.length) {
       const a = typeof codDeliveryAttempts_ === 'function' ? codDeliveryAttempts_(ev) : { count: '', fails: '' };
@@ -157,7 +195,8 @@ function qhRefresh_(me, b) {
       // Khong lay thao tac cap nhat khac (doi kho giao, sua thong tin...) vi do co the la quan ly / NV xu ly.
       const act = function (e) { try { return String((JSON.parse(e.data || 'null') || {}).action || ''); } catch (x) { return ''; } };
       const dl = sorted.filter(function (e) { return e.historyType === 'UPDATE_ITEM' && /^DELIVER_(FAIL|SUCCESS)$/i.test(act(e)); }).pop();
-      rec.driver = dl ? String(dl.createdByName || '') + ' (' + Utilities.formatDate(new Date(dl.createdTime), tz, 'dd/MM HH:mm') + ')' : '';
+      // Chi dung khi get-delivery-info khong tra duoc NV giao
+      if (!x) rec.driver = dl ? String(dl.createdByName || '') : (rec.driverId ? rec.driver : '');
       const le = sorted[sorted.length - 1];
       rec.last = typeof codEventText_ === 'function' ? codEventText_(le) : String(le.historyType || '');
       newSig['qhsig_' + o.order] = sig[o.order];
@@ -171,14 +210,17 @@ function qhRefresh_(me, b) {
   lock.waitLock(30000);
   try {
     const sh = kkSheet_(QH_SH_DETAIL, QH_DETAIL_HEADERS), cur = qhDetailMap_(), add = [];
+    kkEnsureHeaders_(sh, QH_DETAIL_HEADERS);
     recs.forEach(function (r) {
-      const row = [r.order, r.hub, r.status, r.cur, r.deliver, r.value, r.attempts, String(r.fails).slice(0, 2000), r.driver, String(r.last).slice(0, 300), now];
+      const row = [r.order, r.hub, r.status, r.cur, r.deliver, r.value, r.attempts, String(r.fails).slice(0, 2000), r.driver, String(r.last).slice(0, 300), now,
+        r.driverId, r.driverPhone, r.trip];
       if (cur[r.order]) sh.getRange(cur[r.order].row, 1, 1, row.length).setValues([row]);
       else add.push(row);
     });
     if (add.length) {
       const at = sh.getLastRow() + 1;
       sh.getRange(at, 1, add.length, 2).setNumberFormat('@');
+      sh.getRange(at, 12, add.length, 2).setNumberFormat('@');
       sh.getRange(at, 1, add.length, QH_DETAIL_HEADERS.length).setValues(add);
     }
   } finally { lock.releaseLock(); }
@@ -186,9 +228,7 @@ function qhRefresh_(me, b) {
   if (Object.keys(fresh).length) cache.putAll(fresh, QH_FRESH_SEC);
   const at = Utilities.formatDate(now, tz, 'HH:mm dd/MM/yyyy');
   PropertiesService.getScriptProperties().setProperty('QH_STATUS_AT', at);
-  const info = { checked: todo.length, remain: remain, fail: todo.length - recs.length, at: at };
-  if (one) return { ok: true, order: recs[0] ? Object.assign(recs[0], { attempts: recs[0].attempts }) : null, logs: (qhLogs_()[one] || []).slice(-10).reverse(), refresh: info };
-  return Object.assign(qhList_(me), { refresh: info });
+  return { recs: recs, info: { checked: todo.length, remain: remain, fail: todo.length - recs.length, at: at } };
 }
 
 // NV buu cuc / AM cap nhat tinh trang xu ly
@@ -202,7 +242,7 @@ function qhSave_(me, b) {
   const src = qhSource_().rows.filter(function (o) { return o.order === order; })[0];
   if (!src) throw new Error('Đơn ' + order + ' không còn trong danh sách quá hạn');
   const sc = kkScope_(me);
-  if (!sc.all && !sc.hubs[src.hub]) throw new Error('Đơn thuộc bưu cục ' + src.hub + ', ngoài phạm vi của bạn');
+  if (!qhInScope_(sc, src, qhDetailMap_())) throw new Error('Đơn thuộc bưu cục ' + src.hub + ', ngoài phạm vi của bạn');
   const dateVN = date ? date.split('-').reverse().join('/') : '';
   const lock = kkLock_();
   lock.waitLock(20000);

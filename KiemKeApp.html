@@ -1628,6 +1628,10 @@ function renderQh() {
   $('#view').innerHTML = `
     ${hubs.length > 1 || S.qhHub ? `<div class="hubsel"><label for="qhHub">Bưu cục</label><select id="qhHub"><option value="">Tất cả ${hubs.length} bưu cục</option>${hubs.map(h =>
       `<option value="${esc(h.code)}"${h.code === S.qhHub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (chưa xử lý ${h.todo}/${h.n})</option>`).join('')}</select></div>` : ''}
+    <div class="fbar"><button class="chip${nf ? ' on' : ''}" id="qfTog">Bộ lọc${nf ? ' · ' + nf : ''} ${S.qhFOpen ? '▲' : '▼'}</button>
+      ${nf ? `<button class="chip" id="qfClr">Xoá lọc</button>` : ''}<button class="chip" id="qhReload">Tải lại</button></div>
+    ${S.qhFOpen ? `<div class="fpanel">${fpanel}</div>` : ''}
+    <input class="inp" id="qhQ" placeholder="Tìm mã đơn, khách hàng, NV giao…" value="${esc(S.qhSearch)}" style="margin-bottom:10px">
     <div class="stats">
       <button class="stat${S.qhTab === 'all' ? ' on' : ''}" data-qt="all"><b class="num">${c.all}</b><span>Quá hạn</span></button>
       <button class="stat miss${S.qhTab === 'todo' ? ' on' : ''}" data-qt="todo"><b class="num">${c.todo}</b><span>Chưa xử lý</span></button>
@@ -1647,10 +1651,7 @@ function renderQh() {
         ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(tot.all, 'Tất cả đơn ' + tabName, 'tot')}${S.qhTab === 'all' ? cell(tot.todo, 'Tất cả đơn chưa xử lý', 'miss') : ''}
           ${bls.map(b => cell(tot.by[b], 'Tất cả · quá ' + blLabel(b), '')).join('')}</tr></tfoot>` : ''}</table></div>
       <div class="hint" style="margin-top:8px">Cột màu = số giờ quá hạn. Bấm vào con số để xem danh sách đơn${d.canEdit ? ' và cập nhật xử lý' : ''}.</div></div>
-    <div class="fbar"><button class="chip${nf ? ' on' : ''}" id="qfTog">Bộ lọc${nf ? ' · ' + nf : ''} ${S.qhFOpen ? '▲' : '▼'}</button>
-      ${nf ? `<button class="chip" id="qfClr">Xoá lọc</button>` : ''}<button class="chip" id="qhReload">Tải lại</button></div>
-    ${S.qhFOpen ? `<div class="fpanel">${fpanel}</div>` : ''}
-    <input class="inp" id="qhQ" placeholder="Tìm mã đơn, khách hàng, NV giao…" value="${esc(S.qhSearch)}">`;
+`;
   paintQhRefresh();
   const hs = $('#qhHub'); if (hs) hs.onchange = () => { S.qhHub = hs.value; store.set('qhHub', S.qhHub); renderQh(); };
   document.querySelectorAll('[data-qt]').forEach(b => b.onclick = () => { S.qhTab = b.dataset.qt; renderQh(); });

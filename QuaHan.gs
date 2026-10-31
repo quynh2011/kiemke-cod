@@ -15,7 +15,7 @@ const QH_SH_DETAIL = 'QH_ChiTiet';
 const QH_SH_LOG = 'QH_XuLy';
 const QH_DETAIL_HEADERS = ['Mã đơn', 'Mã bưu cục', 'Trạng thái', 'Kho hiện tại', 'Kho giao', 'Giá trị hàng', 'Số lần giao',
   'Lý do giao thất bại', 'NV giao gần nhất', 'Thao tác cuối', 'Cập nhật GHN lúc', 'Mã NV giao', 'SĐT NV giao', 'Mã chuyến',
-  'COD', 'Phường/Xã giao', 'Địa chỉ giao', 'Xuất giao lần cuối lúc'];
+  'COD', 'Phường/Xã giao', 'Địa chỉ giao', 'Xuất giao lần cuối lúc', 'SĐT 4 số cuối', 'Giao thất bại lần cuối lúc'];
 // NV giao that cua don (ma NV, ten, SDT, ma chuyen) - chuan hon doan tu lich su
 const QH_URL_DELIVERY = 'https://nhanh-api.ghn.vn/api/lastmile/delivery/get-delivery-info';
 const QH_LOG_HEADERS = ['Thời gian', 'Mã bưu cục', 'Mã đơn', 'Tình trạng xử lý', 'Hẹn ngày', 'Ghi chú', 'Mã người cập nhật',
@@ -86,7 +86,8 @@ function qhDetailMap_() {
     out[String(r[0]).trim()] = { row: i + 2, status: r[2], cur: String(r[3]), deliver: String(r[4]), value: Number(r[5]) || 0,
       attempts: r[6], fails: String(r[7] || ''), driver: String(r[8] || ''), last: String(r[9] || ''), at: kkTime_(r[10]),
       driverId: String(r[11] || '').trim(), driverPhone: String(r[12] || ''), trip: String(r[13] || ''),
-      cod: r[14] === '' ? '' : Number(r[14]) || 0, ward: String(r[15] || ''), address: String(r[16] || ''), driverAt: String(r[17] || '') };
+      cod: r[14] === '' ? '' : Number(r[14]) || 0, ward: String(r[15] || ''), address: String(r[16] || ''), driverAt: String(r[17] || ''),
+      phone4: String(r[18] || '').replace(/\D/g, ''), failAt: String(r[19] || '') };
   });
   return out;
 }
@@ -117,7 +118,7 @@ function qhList_(me) {
     return Object.assign(o, { hubName: (hubs[o.hub] || {}).name || '', status: d.status || '', cur: d.cur || '', deliver: d.deliver || '',
       value: d.value || 0, attempts: d.attempts === undefined ? '' : d.attempts, fails: d.fails || '', driver: d.driver || '', last: d.last || '',
       driverId: d.driverId || '', driverPhone: d.driverPhone || '', trip: d.trip || '',
-      cod: d.cod === undefined ? '' : d.cod, ward: d.ward || '', address: d.address || '', driverAt: d.driverAt || '',
+      cod: d.cod === undefined ? '' : d.cod, ward: d.ward || '', address: d.address || '', driverAt: d.driverAt || '', failAt: d.failAt || '',
       ghnAt: d.at || '', handle: lg.length ? lg[lg.length - 1] : null, logs: lg.slice(-10).reverse() });
   });
   return { ok: true, srcAt: src.at, orders: orders, statuses: QH_STATUSES, canEdit: kkMods_(me).quahan === 'edit',
@@ -174,7 +175,7 @@ function qhRefreshCore_(pick, limit, one, force) {
   const tz = Session.getScriptTimeZone(), now = new Date();
   const tok = qhTrackToken_();
   QH_DEADLINE_ = Date.now() + (force ? 300000 : QH_APP_SEC * 1000);
-  const got = tok ? qhByTracking_(todo, tok) : qhByNhanh_(todo, one, cache);
+  const got = qhByTracking_(todo, tok, qhDetailMap_(), one, cache);
   const recs = got.recs, newSig = got.newSig || {}, fresh = {};
   recs.forEach(function (r) { fresh['qho_' + r.order] = '1'; });
   // Ghi QH_ChiTiet: cap nhat dong cu, them dong moi
@@ -185,10 +186,10 @@ function qhRefreshCore_(pick, limit, one, force) {
     kkEnsureHeaders_(sh, QH_DETAIL_HEADERS);
     recs.forEach(function (r) {
       const old = cur[r.order] || {};
-      const row = [r.order, r.hub, r.status, r.cur, r.deliver, r.value, r.attempts, String(r.fails).slice(0, 2000), r.driver, String(r.last).slice(0, 300), now,
-        r.driverId, r.driverPhone, r.trip, r.cod === undefined ? (old.cod === undefined ? '' : old.cod) : r.cod,
-        r.ward === undefined ? (old.ward || '') : r.ward, String(r.address === undefined ? (old.address || '') : r.address).slice(0, 300),
-        r.driverAt === undefined ? (old.driverAt || '') : r.driverAt];
+      const keep = function (k, d) { return r[k] === undefined ? (old[k] === undefined ? d : old[k]) : r[k]; };
+      const row = [r.order, r.hub, r.status, keep('cur', ''), keep('deliver', ''), keep('value', 0), r.attempts, String(r.fails).slice(0, 2000), r.driver, String(r.last).slice(0, 300), now,
+        r.driverId, r.driverPhone, r.trip, keep('cod', ''), keep('ward', ''), String(keep('address', '')).slice(0, 300),
+        keep('driverAt', ''), keep('phone4', ''), keep('failAt', '')];
       if (cur[r.order]) sh.getRange(cur[r.order].row, 1, 1, row.length).setValues([row]);
       else add.push(row);
     });
@@ -196,7 +197,7 @@ function qhRefreshCore_(pick, limit, one, force) {
       const at = sh.getLastRow() + 1;
       sh.getRange(at, 1, add.length, 2).setNumberFormat('@');
       sh.getRange(at, 12, add.length, 2).setNumberFormat('@');
-      sh.getRange(at, 18, add.length, 1).setNumberFormat('@');
+      sh.getRange(at, 18, add.length, 3).setNumberFormat('@');
       sh.getRange(at, 1, add.length, QH_DETAIL_HEADERS.length).setValues(add);
     }
   } finally { lock.releaseLock(); }
@@ -263,6 +264,8 @@ function qhByNhanh_(todo, one, cache) {
       rec.last = typeof codEventText_ === 'function' ? codEventText_(le) : String(le.historyType || '');
       newSig['qhsig_' + o.order] = sig[o.order];
     } else if (!needH.some(function (x) { return x.order === o.order; })) newSig['qhsig_' + o.order] = sig[o.order];
+    const p4 = qhPhone4_({ from_phone: d.fromPhone || d.from_phone, return_phone: d.returnPhone || d.return_phone, to_phone: d.toPhone || d.to_phone });
+    if (p4) rec.phone4 = p4;
     rec.ghnAt = Utilities.formatDate(now, tz, 'dd/MM HH:mm');
     recs.push(rec);
     fresh['qho_' + o.order] = '1';
@@ -279,6 +282,21 @@ function qhByNhanh_(todo, one, cache) {
 const QH_TRACK_URL = 'https://fe-online-gateway.ghn.vn/order-tracking/public-api/internal/tracking-logs';
 const QH_WARD_URL = 'https://fe-online-gateway.ghn.vn/order-tracking/public-api/master-data/ward-detail';
 const QH_TOKEN_SHEET = 'Token';
+// Trang tra cuu cong khai donhang.ghn.vn: chi can ma don + 4 so cuoi SDT nguoi gui (phone_verify = SHA-256 cua "MADON|4so")
+const QH_PUBLIC_URL = 'https://fe-online-gateway.ghn.vn/order-tracking/public-api/client/tracking-logs';
+function qhPublicHeaders_() {
+  return { 'accept': 'application/json', 'content-type': 'application/json', 'origin': 'https://donhang.ghn.vn',
+    'referer': 'https://donhang.ghn.vn/', 'token': '[object Object]', 'user-agent': COD_CFG.USER_AGENT };
+}
+function qhPhoneVerify_(order, p4) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, order + '|' + p4, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+function qhPhone4_(oi) {
+  const ps = [oi.from_phone, oi.return_phone, oi.to_phone];
+  for (let i = 0; i < ps.length; i++) { const d = String(ps[i] || '').replace(/\D/g, ''); if (d.length >= 4) return d.slice(-4); }
+  return '';
+}
 
 function qhTrackToken_() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(QH_TOKEN_SHEET);
@@ -325,15 +343,30 @@ function qhProxyAll_(reqs) {
 }
 function qhLogDate_(l) { const d = new Date(l.action_at || l.created_at || l.time || l.created_date || 0); return isNaN(d.getTime()) ? new Date(0) : d; }
 
-function qhByTracking_(todo, tok) {
-  const H = qhTrackHeaders_(tok), tz = Session.getScriptTimeZone();
-  const res = qhProxyAll_(todo.map(function (o) { return { url: QH_TRACK_URL, headers: H, payload: { order_code: o.order, source: 'inside_system' } }; }));
+function qhByTracking_(todo, tok, det, one, cache) {
+  const tz = Session.getScriptTimeZone(), H = tok ? qhTrackHeaders_(tok) : null, HP = qhPublicHeaders_();
+  // 1) Trang cong khai (khong bi gioi han nhu API noi bo): don da biet 4 so cuoi SDT nguoi gui
+  const res = new Array(todo.length), pub = new Array(todo.length);
+  const pIdx = todo.map(function (o, i) { return (det[o.order] || {}).phone4 ? i : -1; }).filter(function (i) { return i >= 0; });
+  if (pIdx.length) {
+    const pr = qhProxyAll_(pIdx.map(function (i) { const o = todo[i];
+      return { url: QH_PUBLIC_URL, headers: HP, payload: { order_code: o.order, phone_verify: qhPhoneVerify_(o.order, det[o.order].phone4) } }; }));
+    pIdx.forEach(function (i, k) { if (pr[k] && pr[k].data) { res[i] = pr[k]; pub[i] = true; } });
+  }
+  // 2) API noi bo (token sheet Token!A1): don chua co SDT hoac trang cong khai loi -> lay luon 4 so cuoi SDT cho lan sau
+  const iIdx = todo.map(function (o, i) { return res[i] ? -1 : i; }).filter(function (i) { return i >= 0; });
+  if (iIdx.length && H) {
+    const ir = qhProxyAll_(iIdx.map(function (i) { return { url: QH_TRACK_URL, headers: H, payload: { order_code: todo[i].order, source: 'inside_system' } }; }));
+    iIdx.forEach(function (i, k) { res[i] = ir[k]; });
+  }
+  // Khong co token noi bo: don chua co SDT tra bang API nhanh.ghn.vn (du phong)
+  const extra = iIdx.length && !H ? qhByNhanh_(iIdx.map(function (i) { return todo[i]; }), one, cache) : null;
   // Ten phuong/xa theo ma (cache 6 gio)
-  const cache = CacheService.getScriptCache(), wards = {};
+  const wards = {};
   todo.forEach(function (o, i) { const oi = ((res[i] || {}).data || {}).order_info || {}; if (oi.to_ward_code) wards[String(oi.to_ward_code)] = ''; });
   const wcodes = Object.keys(wards), hit = wcodes.length ? cache.getAll(wcodes.map(function (w) { return 'qhw_' + w; })) : {};
   const miss = wcodes.filter(function (w) { return !hit['qhw_' + w]; });
-  if (miss.length) {
+  if (miss.length && H) {
     const wr = qhProxyAll_(miss.map(function (w) { return { url: QH_WARD_URL + '?ward_code=' + encodeURIComponent(w), headers: H, payload: { ward_code: w } }; }));
     const put = {};
     miss.forEach(function (w, i) { const n = wr[i] && wr[i].data && wr[i].data.ward_name; if (n) put['qhw_' + w] = String(n).trim(); });
@@ -342,10 +375,12 @@ function qhByTracking_(todo, tok) {
   const recs = [];
   todo.forEach(function (o, i) {
     const data = res[i] && res[i].data; if (!data) return;
+    const isPub = !!pub[i];
     const oi = data.order_info || data.order || {};
     const logs = (data.tracking_logs || data.logs || []).slice().sort(function (a, b) { return qhLogDate_(a) - qhLogDate_(b); });
     const txt = function (l) { return [l.status_name, l.action_name, l.reason, l.note].filter(Boolean).join(' ').toLowerCase(); };
     const failed = logs.filter(function (l) { return String(l.action_code || '').toUpperCase() === 'DELIVER_FAILED' || txt(l).indexOf('giao hàng không thành công') >= 0; });
+    const lastFail = failed[failed.length - 1];
     const trips = logs.filter(function (l) {
       return (String(l.action_code || '').toUpperCase() === 'START_DELIVERY_TRIP' || String(l.status_name || '').toLowerCase().indexOf('đang giao hàng') >= 0) &&
         l.executor && l.executor.employee_id;
@@ -363,23 +398,28 @@ function qhByTracking_(todo, tok) {
     let cur = '';
     for (let k = logs.length - 1; k >= 0 && !cur; k--) { const w = logs[k].location && logs[k].location.warehouse_id; if (w) cur = String(w); }
     if (!cur && oi.current_warehouse_id) cur = String(oi.current_warehouse_id);
-    const addrOk = function (a) { return a && !/\*\*\*|^x+$/i.test(String(a).trim()); };
+    const addrOk = function (a) { return a && !/\*\*\*|^x+$|^x{3,}\s/i.test(String(a).trim()); };
     let addr = addrOk(oi.to_address) ? String(oi.to_address).trim() : '';
     for (let k = logs.length - 1; k >= 0 && !addr; k--) {
       const a = String((logs[k].location || {}).address || '');
-      if (a.indexOf('giao đến') >= 0 && addrOk(a)) addr = a.replace(/Đơn hàng đang giao đến\s*/gi, '').trim();
+      const a2 = a.replace(/Đơn hàng đang giao đến\s*/gi, '').trim();
+      if (a.indexOf('giao đến') >= 0 && addrOk(a2)) addr = a2;
     }
     const le = logs[logs.length - 1] || {};
-    recs.push({ order: o.order, hub: o.hub, status: String(oi.status_name || le.status_name || '').trim(), cur: cur, deliver: String(oi.deliver_warehouse_id || ''),
-      value: Number(oi.order_value) || 0, cod: oi.cod_amount === undefined || oi.cod_amount === null ? '' : Number(oi.cod_amount) || 0,
+    const ph = qhPhone4_(oi);
+    recs.push({ order: o.order, hub: o.hub, status: String(oi.status_name || le.status_name || '').trim(), cur: cur || undefined,
+      deliver: oi.deliver_warehouse_id ? String(oi.deliver_warehouse_id) : undefined,
+      value: oi.order_value === undefined ? undefined : Number(oi.order_value) || 0,
+      cod: oi.cod_amount === undefined ? undefined : oi.cod_amount === null ? '' : Number(oi.cod_amount) || 0,
+      phone4: ph || undefined, failAt: lastFail ? Utilities.formatDate(qhLogDate_(lastFail), tz, 'dd/MM HH:mm') : '',
       attempts: failed.length, fails: fails,
       driver: drvId ? ((ns && ns.ten) || ('NV ' + drvId)) : '', driverId: drvId, driverPhone: '',
       driverAt: lastTripAt ? Utilities.formatDate(qhLogDate_(lastTripAt), tz, 'dd/MM HH:mm') : '',
-      trip: '', ward: hit['qhw_' + oi.to_ward_code] || '', address: addr,
+      trip: '', ward: oi.to_ward_code ? (hit['qhw_' + oi.to_ward_code] || '') : undefined, address: addr || (isPub ? undefined : ''),
       last: le.status_name ? String(le.status_name) + ' | ' + Utilities.formatDate(qhLogDate_(le), tz, 'dd/MM HH:mm') : '',
       ghnAt: Utilities.formatDate(new Date(), tz, 'dd/MM HH:mm') });
   });
-  return { recs: recs };
+  return { recs: extra ? recs.concat(extra.recs) : recs, newSig: extra ? extra.newSig : {} };
 }
 
 // NV buu cuc / AM cap nhat tinh trang xu ly

@@ -120,7 +120,9 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .qkpi .stat em { display: block; font-style: normal; font-size: 11.5px; font-weight: 700; margin-top: 2px; }
 .qkpi .stat.go b, .qkpi .stat.go em { color: #0B6E3F; } .qkpi .stat.ok b, .qkpi .stat.ok em { color: var(--ok); } .qkpi .stat.miss em { color: var(--miss); }
 .catbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; margin: 2px 0 6px; background: var(--line); }
-.catbar i { display: block; } .catbar i.go { background: #16A34A; } .catbar i.ok { background: #0E7490; } .catbar i.bad { background: var(--miss); }
+.catbar i { display: block; } .catbar i.wait { background: #D97706; }
+.stats.qkpi { grid-template-columns: repeat(5, 1fr); gap: 6px; } .qkpi .stat span { font-size: 11.5px; line-height: 1.2; }
+.qkpi .stat.wait b, .qkpi .stat.wait em { color: #B45309; } .cnum.wait { background: #FEF3C7; border-color: #FCD34D; color: #92400E; } .catbar i.go { background: #16A34A; } .catbar i.ok { background: #0E7490; } .catbar i.bad { background: var(--miss); }
 .tbl.qtbl td.num small { display: block; font-size: 10.5px; color: var(--ink-2); margin-top: 2px; font-weight: 600; }
 .cnum.go { background: #DCFCE7; border-color: #A7E3BD; color: #0B6E3F; } .cnum.ok { background: #E0F2FE; border-color: #A5D8F0; color: #0E7490; }
 .blbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; margin: 2px 0 6px; }
@@ -423,6 +425,7 @@ const Demo = (function () {
   const qhRow = (hub, order, customer, group, backlog, status, att, fails, driver) => ({ hub, hubName: (hubs.find(h => h.code === hub) || {}).name, order, customer, group, backlog,
     status, cur: hub, deliver: hub, value: 1500000 + order.length * 120000, cod: 1200000 + order.length * 95000, attempts: att, fails,
     driver: driver.replace(/\s*\(.*\)$/, ''), driverId: String(3000000 + driver.length * 1371), driverAt: (driver.match(/\((.*)\)/) || [])[1] || '',
+    failAt: /không thành công|thất bại/i.test(status) ? ((driver.match(/\((\d\d\/\d\d)/) || [])[1] || '') + ' 23:00' : '',
     ward: 'Phường Phan Đình Phùng', address: 'Số ' + order.length + ' đường Lương Ngọc Quyến',
     last: 'Giao hàng không thành công | 29/10 18:30', ghnAt: '18:40' });
   const qhOrders = [
@@ -1564,17 +1567,23 @@ const QH_GROUP_VN = { DELIVER: 'Chờ giao', DELIVER_PRIORITY: 'Chờ giao (ưu 
   RETURN: 'Chờ trả', RETURNING: 'Đang trả', STORING: 'Lưu kho' };
 const grpVN = g => QH_GROUP_VN[String(g || '').toUpperCase()] || g || '(trống)';
 const drvName = o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ NV)';
-// Tu phan loai theo du lieu GHN: Da dut diem > Da gan (xuat giao hom nay) > Chua xu ly
-const QH_CAT = { done: ['Đã dứt điểm', 'ok'], assigned: ['Đã gán', 'go'], todo: ['Chưa xử lý', 'bad'] };
+// Tu phan loai theo du lieu GHN:
+//  Da dut diem  : giao thanh cong / cho xac nhan giao lai / chuyen hoan (tra hang)
+//  Da gan       : co luot xuat giao HOM NAY (hoac dang giao) va chua bao giao that bai sau luot do
+//  Chua dut diem: da gan hom nay nhung giao khong thanh cong
+//  Chua gan     : con lai (hom nay chua xuat giao)
+const QH_CAT = { assigned: ['Đã gán', 'go'], notdone: ['Chưa dứt điểm', 'wait'], done: ['Đã dứt điểm', 'ok'], todo: ['Chưa gán', 'bad'] };
+const QH_CAT_KEYS = ['assigned', 'notdone', 'done', 'todo'];
 function qhCat(o) {
   const st = String(o.status || '').toLowerCase();
   const fail = /không thành công|thất bại/.test(st);
   if (!fail && (/thành công|đã giao|chờ xác nhận giao lại|hoàn|trả hàng|luân chuyển trả/.test(st))) return 'done';
-  // Da gan: dang tren chuyen giao (trang thai / nhom Dang giao) hoac co luot xuat giao hom nay
-  if (/đang giao/.test(st) || /^DELIVERING/i.test(String(o.group || ''))) return 'assigned';
   const today = String((S.qh || {}).today || '').slice(0, 5); // dd/MM
-  if (o.driverAt && today && String(o.driverAt).slice(0, 5) === today) return 'assigned';
-  return 'todo';
+  const isToday = t => !!(t && today && String(t).slice(0, 5) === today);
+  const tripToday = isToday(o.driverAt) || /đang giao/.test(st) || /^DELIVERING/i.test(String(o.group || ''));
+  if (!tripToday) return 'todo';
+  const failToday = fail || (isToday(o.failAt) && (!isToday(o.driverAt) || String(o.failAt) >= String(o.driverAt)));
+  return failToday && !/đang giao/.test(st) ? 'notdone' : 'assigned';
 }
 const catTag = o => { const c = QH_CAT[qhCat(o)]; return `<span class="hd ${c[1]}">${c[0]}</span>`; };
 const QH_F = [
@@ -1636,11 +1645,11 @@ function renderQh() {
   const q = S.qhSearch.trim().toUpperCase();
   const base = d.orders.filter(o => qhPass(o)).filter(o => !q || [o.order, o.customer, grpVN(o.group), o.driver, o.hub, o.hubName, o.status].join(' ').toUpperCase().indexOf(q) >= 0);
   const by = c => base.filter(o => qhCat(o) === c);
-  const T = { all: base, assigned: by('assigned'), done: by('done'), todo: by('todo') };
+  const T = { all: base, assigned: by('assigned'), notdone: by('notdone'), done: by('done'), todo: by('todo') };
   const bls = [...new Set(base.map(o => o.backlog || ''))].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
   const blN = {}; base.forEach(o => { blN[o.backlog || ''] = (blN[o.backlog || ''] || 0) + 1; });
   const g = QH_GROUPS.some(x => x[0] === S.qhGroup) ? S.qhGroup : 'driver', R = {};
-  base.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], assigned: [], done: [], todo: [], bl: {} };
+  base.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], assigned: [], notdone: [], done: [], todo: [], bl: {} };
     r.all.push(o); r[qhCat(o)].push(o); (r.bl[o.backlog || ''] = r.bl[o.backlog || ''] || []).push(o); });
   const TB = {}; base.forEach(o => { (TB[o.backlog || ''] = TB[o.backlog || ''] || []).push(o); });
   const rows = Object.values(R).sort((a, b) => b.todo.length - a.todo.length || b.all.length - a.all.length);
@@ -1665,28 +1674,29 @@ function renderQh() {
   const nA = T.all.length;
   $('#view').innerHTML = `
     ${hubs.length > 1 || S.qhHub ? `<div class="hubsel"><label for="qhHub">Bưu cục</label><select id="qhHub"><option value="">Tất cả ${hubs.length} bưu cục</option>${hubs.map(h =>
-      `<option value="${esc(h.code)}"${h.code === S.qhHub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (chưa xử lý ${h.todo}/${h.n})</option>`).join('')}</select></div>` : ''}
+      `<option value="${esc(h.code)}"${h.code === S.qhHub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (chưa gán ${h.todo}/${h.n})</option>`).join('')}</select></div>` : ''}
     <div class="fbar"><button class="chip${nf ? ' on' : ''}" id="qfTog">Bộ lọc${nf ? ' · ' + nf : ''} ${S.qhFOpen ? '▲' : '▼'}</button>
       ${nf ? `<button class="chip" id="qfClr">Xoá lọc</button>` : ''}<button class="chip" id="qhReload">Tải lại</button></div>
     ${S.qhFOpen ? `<div class="fpanel">${fpanel}</div>` : ''}
     <input class="inp" id="qhQ" placeholder="Tìm mã đơn, khách hàng, NV giao…" value="${esc(S.qhSearch)}" style="margin-bottom:10px">
-    <div class="stats qkpi">${kpi('all', 'Quá hạn', '')}${kpi('assigned', 'Đã gán', 'go')}${kpi('done', 'Đã dứt điểm', 'ok')}${kpi('todo', 'Chưa xử lý', 'miss')}</div>
-    <div class="catbar">${['assigned', 'done', 'todo'].map(k => T[k].length ? `<i class="${QH_CAT[k][1]}" style="flex:${T[k].length}"></i>` : '').join('')}</div>
+    <div class="stats qkpi">${kpi('all', 'Quá hạn', '')}${kpi('assigned', 'Đã gán', 'go')}${kpi('notdone', 'Chưa dứt điểm', 'wait')}${kpi('done', 'Đã dứt điểm', 'ok')}${kpi('todo', 'Chưa gán', 'miss')}</div>
+    <div class="catbar">${QH_CAT_KEYS.map(k => T[k].length ? `<i class="${QH_CAT[k][1]}" style="flex:${T[k].length}"></i>` : '').join('')}</div>
     <div class="bllegend">${bls.map(b => `<span><i class="${blTone(b)}"></i>Quá ${esc(blLabel(b))} <b>${blN[b]}</b></span>`).join('')}</div>
     <div id="qhLive" class="refreshline"></div>
     <div class="card qtab">
       <div class="qhead"><b>Báo cáo đơn quá hạn</b><span>${nA} đơn</span></div>
       <div class="qtime"><span>Dữ liệu sheet Quahan: <b>${esc(d.srcAt || '—')}</b></span><span>Trạng thái GHN cập nhật: <b>${esc(d.statusAt || '—')}</b></span>${qhTrigTxt(d.trig)}</div>
       <div class="seg" style="margin-bottom:10px">${QH_GROUPS.map(x => `<button data-qg="${x[0]}" class="${g === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
-      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th>${bls.map(b => `<th>${b ? blTag(b) : '(trống)'}</th>`).join('')}<th>Đã gán</th><th>Dứt điểm</th><th>Chưa XL</th></tr></thead>
+      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th>${bls.map(b => `<th>${b ? blTag(b) : '(trống)'}</th>`).join('')}<th>Đã gán</th><th>Chưa dứt điểm</th><th>Dứt điểm</th><th>Chưa gán</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><div class="nm">${esc(r.name)}</div>${r.sub ? `<div class="k">${esc(r.sub)}</div>` : ''}</td>
           ${cell(r.all, nA, r.name + ' · tất cả', 'tot')}${bls.map(b => blCell(r.bl[b], r.name + ' · ' + (b ? 'quá ' + blLabel(b) : 'backlog trống'))).join('')}
-          ${cell(r.assigned, nA, r.name + ' · đã gán', 'go')}${cell(r.done, nA, r.name + ' · đã dứt điểm', 'ok')}${cell(r.todo, nA, r.name + ' · chưa xử lý', 'miss')}</tr>`).join('')
-          || `<tr><td colspan="${5 + bls.length}" class="empty">Không có đơn nào</td></tr>`}</tbody>
+          ${cell(r.assigned, nA, r.name + ' · đã gán', 'go')}${cell(r.notdone, nA, r.name + ' · chưa dứt điểm', 'wait')}${cell(r.done, nA, r.name + ' · đã dứt điểm', 'ok')}${cell(r.todo, nA, r.name + ' · chưa gán', 'miss')}</tr>`).join('')
+          || `<tr><td colspan="${6 + bls.length}" class="empty">Không có đơn nào</td></tr>`}</tbody>
         ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(T.all, nA, 'Tất cả đơn quá hạn', 'tot')}${bls.map(b => blCell(TB[b], 'Tất cả · ' + (b ? 'quá ' + blLabel(b) : 'backlog trống'))).join('')}
-          ${cell(T.assigned, nA, 'Tất cả · đã gán', 'go')}${cell(T.done, nA, 'Tất cả · đã dứt điểm', 'ok')}${cell(T.todo, nA, 'Tất cả · chưa xử lý', 'miss')}</tr></tfoot>` : ''}</table></div>
-      <div class="hint" style="margin-top:8px"><b>Đã gán</b>: đang giao / có lượt xuất giao hôm nay · <b>Đã dứt điểm</b>: giao thành công / chờ xác nhận giao lại / chuyển hoàn · còn lại là <b>Chưa xử lý</b>.<br>
-        Cột backlog: số đơn, % nhỏ = tỷ lệ đã xử lý (đã gán + dứt điểm) trong ô đó. Cột Tổng / Đã gán / Dứt điểm / Chưa XL: % = so với tổng ${nA} đơn. Bấm số để xem danh sách đơn.</div></div>`;
+          ${cell(T.assigned, nA, 'Tất cả · đã gán', 'go')}${cell(T.notdone, nA, 'Tất cả · chưa dứt điểm', 'wait')}${cell(T.done, nA, 'Tất cả · đã dứt điểm', 'ok')}${cell(T.todo, nA, 'Tất cả · chưa gán', 'miss')}</tr></tfoot>` : ''}</table></div>
+      <div class="hint" style="margin-top:8px"><b>Đã gán</b>: có lượt xuất giao hôm nay, chưa báo thất bại · <b>Chưa dứt điểm</b>: đã gán hôm nay nhưng giao không thành công ·
+        <b>Đã dứt điểm</b>: giao thành công / chờ xác nhận giao lại / chuyển hoàn · <b>Chưa gán</b>: hôm nay chưa xuất giao.<br>
+        Cột backlog: số đơn, % nhỏ = tỷ lệ đã xử lý (đã gán + chưa dứt điểm + đã dứt điểm) trong ô đó. Cột Tổng / Đã gán / Chưa dứt điểm / Dứt điểm / Chưa gán: % = so với tổng ${nA} đơn. Bấm số để xem danh sách đơn.</div></div>`;
   paintQhRefresh();
   const hs = $('#qhHub'); if (hs) hs.onchange = () => { S.qhHub = hs.value; store.set('qhHub', S.qhHub); renderQh(); };
   document.querySelectorAll('[data-kpi]').forEach(b => b.onclick = () => { const k = b.dataset.kpi; qhList((k === 'all' ? 'Tất cả đơn quá hạn' : QH_CAT[k][0]), T[k].map(o => o.order)); });
@@ -1734,7 +1744,7 @@ function qhOpen(code, again) {
       <dt>Số lần giao</dt><dd>${o.attempts !== '' && o.attempts != null ? esc(o.attempts) + ' lần' : '—'}</dd>
       <dt>Lý do giao thất bại</dt><dd>${o.fails ? `<div class="fails">${esc(o.fails)}</div>` : '—'}</dd>
       <dt>Địa chỉ giao</dt><dd>${esc([o.address, o.ward].filter(Boolean).filter((x, i, a) => i === 0 || a[0].indexOf(x) < 0).join(', ') || '—')}</dd>
-      <dt>NV giao lần cuối</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverAt ? `<br><span class="sub">Xuất giao lúc ${esc(o.driverAt)}</span>` : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
+      <dt>NV giao lần cuối</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverAt ? `<br><span class="sub">Xuất giao lúc ${esc(o.driverAt)}</span>` : ''}${o.failAt ? `<br><span class="sub">Giao thất bại lần cuối ${esc(o.failAt)}</span>` : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
       <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
       <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}</dd>
       <dt>Thao tác cuối</dt><dd>${esc(o.last || '—')}</dd>

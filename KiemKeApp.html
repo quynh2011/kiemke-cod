@@ -1673,7 +1673,7 @@ function qhList(title, codes) {
     <h3 style="padding-right:36px">${esc(title)}</h3><div class="hint" style="margin:-6px 0 10px">${xs.length} đơn · bấm đơn để xem chi tiết${d.canEdit ? ' / cập nhật xử lý' : ''}</div>
     <div class="qlist">${xs.map(o => `<button class="qrow" data-qo="${esc(o.order)}">
       <div class="r1"><b>${esc(o.order)}</b>${blTag(o.backlog)}</div>
-      <div class="r2">${esc(o.customer)} · ${esc(o.group)} · ${esc(drvName(o))}</div>
+      <div class="r2">${o.cod ? '<b style="color:var(--brand)">' + money(o.cod) + ' đ</b> · ' : ''}${esc(o.customer)} · ${esc(o.group)} · ${esc(drvName(o))}${o.ward ? ' · ' + esc(o.ward) : ''}</div>
       <div class="r3">${stTag(o.status)}${o.attempts !== '' && o.attempts != null ? `<span class="sub">giao ${esc(o.attempts)} lần</span>` : ''}${hdTag(o.handle)}</div></button>`).join('')}</div>
     <button class="btn light block" data-close style="margin-top:10px">Đóng</button></div>`;
   document.body.appendChild(bg);
@@ -1693,10 +1693,12 @@ function qhOpen(code, again) {
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}${blTag(o.backlog)}${hdTag(o.handle)}</div>
     <dl class="od">
       <dt>Khách hàng</dt><dd>${esc(o.customer || '—')} · ${esc(o.group || '')}</dd>
-      <dt>Giá trị hàng</dt><dd class="num" style="color:var(--brand);font-weight:700">${o.value ? money(o.value) + ' đ' : '—'}</dd>
+      ${o.cod !== '' && o.cod != null ? `<dt>COD</dt><dd class="num" style="color:var(--brand);font-weight:700">${money(o.cod)} đ</dd>`
+        : `<dt>Giá trị hàng</dt><dd class="num" style="color:var(--brand);font-weight:700">${o.value ? money(o.value) + ' đ' : '—'}</dd>`}
       <dt>Số lần giao</dt><dd>${o.attempts !== '' && o.attempts != null ? esc(o.attempts) + ' lần' : '—'}</dd>
       <dt>Lý do giao thất bại</dt><dd>${o.fails ? `<div class="fails">${esc(o.fails)}</div>` : '—'}</dd>
-      <dt>NV giao</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
+      <dt>Địa chỉ giao</dt><dd>${esc([o.address, o.ward].filter(Boolean).filter((x, i, a) => i === 0 || a[0].indexOf(x) < 0).join(', ') || '—')}</dd>
+      <dt>NV giao lần cuối</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverAt ? `<br><span class="sub">Xuất giao lúc ${esc(o.driverAt)}</span>` : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
       <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
       <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}${o.deliver && o.deliver !== o.hub ? '<br><span class="sub">Kho giao: ' + esc(o.deliver) + '</span>' : ''}</dd>
       <dt>Thao tác cuối</dt><dd>${esc(o.last || '—')}</dd>

@@ -118,7 +118,13 @@ function qhList_(me) {
       ghnAt: d.at || '', handle: lg.length ? lg[lg.length - 1] : null, logs: lg.slice(-10).reverse() });
   });
   return { ok: true, srcAt: src.at, orders: orders, statuses: QH_STATUSES, canEdit: kkMods_(me).quahan === 'edit',
-    today: kkToday_(), statusAt: PropertiesService.getScriptProperties().getProperty('QH_STATUS_AT') || '' };
+    today: kkToday_(), statusAt: PropertiesService.getScriptProperties().getProperty('QH_STATUS_AT') || '', trig: qhTrigInfo_() };
+}
+function qhTrigInfo_() {
+  let t = {}; try { t = JSON.parse(PropertiesService.getScriptProperties().getProperty('QH_TRIG') || '{}'); } catch (e) { t = {}; }
+  t.on = ScriptApp.getProjectTriggers().some(function (x) { return x.getHandlerFunction() === 'QHCapNhat'; });
+  t.min = QH_TRIGGER_MIN;
+  return t;
 }
 
 // Tra GHN cho don qua han trong pham vi. b.order = 1 don (popup, tra ngay). Con lai: bo qua don vua tra trong 3 phut.
@@ -131,9 +137,17 @@ function qhRefresh_(me, b) {
 }
 
 // Trigger QH_TRIGGER_MIN phut/lan: tra GHN tat ca don qua han (de NV giao, bang tong hop luon co du lieu moi)
+// Trigger luon tra lai TAT CA don (khong bo qua don vua tra) va ghi lai ket qua lan chay de app hien thi
 function QHCapNhat() {
-  const r = qhRefreshCore_(function () { return true; }, 0, false);
-  console.log('[QuaHan] Tra GHN ' + r.info.checked + ' don' + (r.info.fail ? ', loi ' + r.info.fail : '') + '.');
+  const P = PropertiesService.getScriptProperties(), at = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm dd/MM/yyyy');
+  try {
+    const r = qhRefreshCore_(function () { return true; }, 0, false, true);
+    P.setProperty('QH_TRIG', JSON.stringify({ at: at, n: r.info.checked, fail: r.info.fail }));
+    console.log('[QuaHan] Tra GHN ' + r.info.checked + ' don' + (r.info.fail ? ', loi ' + r.info.fail : '') + '.');
+  } catch (e) {
+    P.setProperty('QH_TRIG', JSON.stringify({ at: at, err: String(e && e.message || e).slice(0, 200) }));
+    throw e;
+  }
 }
 function QHCaiTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'QHCapNhat') ScriptApp.deleteTrigger(t); });
@@ -142,11 +156,11 @@ function QHCaiTrigger() {
 }
 
 // pick(o): chon don; limit: so don toi da (0 = khong gioi han); one: popup 1 don (tra ngay, ke ca vua tra)
-function qhRefreshCore_(pick, limit, one) {
+function qhRefreshCore_(pick, limit, one, force) {
   if (typeof codFetchBatch_ !== 'function' || typeof codReadConfig_ !== 'function') throw new Error('Cần file COD_check.gs trong cùng project để tra GHN');
   const cache = CacheService.getScriptCache();
   let todo = qhSource_().rows.filter(pick);
-  if (!one && todo.length) {
+  if (!one && !force && todo.length) {
     const keys = todo.map(function (o) { return 'qho_' + o.order; }), hit = {};
     for (let i = 0; i < keys.length; i += 500) Object.assign(hit, cache.getAll(keys.slice(i, i + 500)));
     todo = todo.filter(function (o, i) { return !hit[keys[i]]; });

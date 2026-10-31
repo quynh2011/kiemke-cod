@@ -34,8 +34,10 @@ const QH_STATUSES = [
   { code: 'HU_HONG', name: 'Hàng hư hỏng / thất lạc - đã báo cáo', tone: 'bad', need: 'note' },
   { code: 'KHAC', name: 'Khác', tone: 'wait', need: 'note' }
 ];
-const QH_FRESH_SEC = 180;      // don vua tra GHN trong 3 phut -> khong tra lai
-const QH_MAX_PER_CALL = 100;   // so don toi da tra trong 1 lan goi tu app
+const QH_FRESH_SEC = 300;      // don vua tra GHN trong 5 phut -> khong tra lai (trigger chay 5 phut/lan)
+const QH_MAX_PER_CALL = 300;   // so don toi da tra trong 1 lan goi tu app
+const QH_CONC = 30;            // so request goi song song toi GHN (gap 429 se tu giam va thu lai)
+const QH_TRIGGER_MIN = 5;      // trigger tu cap nhat: 1 / 5 / 10 / 15 / 30 phut
 
 function qhHandle_(me, a, b) {
   if (a === 'qhList') { kkNeed_(me, 'quahan', 'view'); return qhList_(me); }
@@ -128,15 +130,15 @@ function qhRefresh_(me, b) {
   return Object.assign(qhList_(me), { refresh: info.info });
 }
 
-// Trigger 10 phut/lan: tra GHN tat ca don qua han (de NV giao, bang tong hop luon co du lieu moi)
+// Trigger QH_TRIGGER_MIN phut/lan: tra GHN tat ca don qua han (de NV giao, bang tong hop luon co du lieu moi)
 function QHCapNhat() {
   const r = qhRefreshCore_(function () { return true; }, 0, false);
   console.log('[QuaHan] Tra GHN ' + r.info.checked + ' don' + (r.info.fail ? ', loi ' + r.info.fail : '') + '.');
 }
 function QHCaiTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'QHCapNhat') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('QHCapNhat').timeBased().everyMinutes(10).create();
-  console.log('[QuaHan] Da cai trigger cap nhat don qua han 10 phut/lan.');
+  ScriptApp.newTrigger('QHCapNhat').timeBased().everyMinutes(QH_TRIGGER_MIN).create();
+  console.log('[QuaHan] Da cai trigger cap nhat don qua han ' + QH_TRIGGER_MIN + ' phut/lan.');
 }
 
 // pick(o): chon don; limit: so don toi da (0 = khong gioi han); one: popup 1 don (tra ngay, ke ca vua tra)
@@ -274,8 +276,9 @@ function qhProxyAll_(reqs) {
   let pending = reqs.map(function (_, i) { return i; }), wait = 3000;
   for (let attempt = 0; attempt < 4 && pending.length; attempt++) {
     const limited = [];
-    for (let k = 0; k < pending.length; k += 8) {
-      const chunk = pending.slice(k, k + 8);
+    const step = attempt ? Math.max(4, Math.floor(QH_CONC / (attempt * 2))) : QH_CONC;
+    for (let k = 0; k < pending.length; k += step) {
+      const chunk = pending.slice(k, k + step);
       let resps;
       try {
         resps = UrlFetchApp.fetchAll(chunk.map(function (i) {
@@ -290,7 +293,7 @@ function qhProxyAll_(reqs) {
         if (r.getResponseCode() === 429 || (js && Number(js.code) === 429)) { limited.push(i); return; }
         out[i] = js && (!js.code || Number(js.code) === 200) ? js : null;
       });
-      Utilities.sleep(200);
+      if (limited.length) Utilities.sleep(300);
     }
     pending = limited;
     if (pending.length) { Utilities.sleep(wait); wait = Math.min(wait * 2, 20000); }

@@ -770,7 +770,7 @@ async function makeQr(uri) {
     const el = $('#eQr'); if (el) el.innerHTML = q.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
   } catch (e) { const el = $('#eQr'); if (el) el.innerHTML = '<div class="hint">Không tạo được mã QR — tải lại trang hoặc dùng nút "Mở Authenticator".</div>'; }
 }
-function logout() { stopScan(); S.token = ''; S.user = null; S.data = null; store.del('token'); store.del('user'); viewLogin(); }
+function logout() { stopScan(); store.del('qhCache'); S.qh = null; S.token = ''; S.user = null; S.data = null; store.del('token'); store.del('user'); viewLogin(); }
 function onApiError(e) { if (e.auth) { logout(); viewLogin(e.message); } else toast(e.message); }
 
 // =====================================================================
@@ -1586,20 +1586,26 @@ const QH_F = [
   { k: 'driver', label: 'NV giao', val: o => drvName(o) }
 ];
 function qhPass(o, skip) { return (!S.qhHub || o.hub === S.qhHub) && QH_F.every(F => F.k === skip || !S.qhF[F.k] || F.val(o) === S.qhF[F.k]); }
+// Luu ban bao cao gan nhat tren may -> mo app hien ngay, cap nhat GHN chay ngam
+const qhCacheGet = () => { const c = store.get('qhCache', null); return c && S.user && c.ma === S.user.ma && c.data && c.data.orders ? c.data : null; };
+const qhCachePut = d => { if (d && d.orders && S.user) store.set('qhCache', { ma: S.user.ma, data: d }); };
 async function viewQh() {
   if (!S.qh) {
+    const c = DEMO ? null : qhCacheGet();
+    if (c) { S.qh = c; renderQh(); qhRefreshAll(); return; }
     $('#view').innerHTML = loader('Đang tải danh sách đơn quá hạn', 6);
     try { S.qh = await api('qhList'); } catch (e) { onApiError(e); return; }
+    qhCachePut(S.qh);
     if (S.tab !== 'qh') return;
     renderQh(); qhRefreshAll();
-  } else renderQh();
+  } else { renderQh(); if (!S.qhBusy && Date.now() - (S.qhRefAt || 0) > 60000) qhRefreshAll(); }
 }
 async function qhRefreshAll() {
   if (S.qhBusy || DEMO) return;
   S.qhBusy = true; paintQhRefresh();
   try {
     for (let i = 0; i < 8; i++) {
-      const r = await api('qhRefresh'); S.qh = r;
+      const r = await api('qhRefresh'); S.qh = r; qhCachePut(r); S.qhRefAt = Date.now();
       const t = Date.now(); if (!r.refresh || !r.refresh.remain) { r.orders.forEach(o => { S.qhAt[o.order] = t; }); }
       if (S.tab === 'qh') renderQh();
       if (!r.refresh || !r.refresh.remain) break;

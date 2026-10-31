@@ -128,7 +128,7 @@ function qhRefresh_(me, b) {
   const sig = {}, prev = cache.getAll(todo.map(function (o) { return 'qhsig_' + o.order; }));
   todo.forEach(function (o, i) {
     const d = ci[i].json && ci[i].json.data;
-    if (d) sig[o.order] = [d.partnerStatus, d.partnerAction, d.status, d.currentId].join('|');
+    if (d) sig[o.order] = ['v2', d.partnerStatus, d.partnerAction, d.status, d.currentId].join('|'); // v2: tra lai lich su sau khi sua cach lay NV giao
   });
   const det = qhDetailMap_();
   const needH = todo.filter(function (o) { return sig[o.order] && (one || prev['qhsig_' + o.order] !== sig[o.order] || !det[o.order]); });
@@ -153,8 +153,11 @@ function qhRefresh_(me, b) {
       const a = typeof codDeliveryAttempts_ === 'function' ? codDeliveryAttempts_(ev) : { count: '', fails: '' };
       rec.attempts = a.count; rec.fails = a.fails;
       const sorted = ev.slice().sort(function (x, y) { return new Date(x.createdTime) - new Date(y.createdTime); });
-      const dl = sorted.filter(function (e) { return e.historyType === 'UPDATE_ITEM' && /DELIVER/i.test(String(e.data || '')); }).pop();
-      if (dl) rec.driver = String(dl.createdByName || '') + ' (' + Utilities.formatDate(new Date(dl.createdTime), tz, 'dd/MM HH:mm') + ')';
+      // NV giao = nguoi thuc hien LAN GIAO THAT (action DELIVER_FAIL / DELIVER_SUCCESS), giong cach dem so lan giao.
+      // Khong lay thao tac cap nhat khac (doi kho giao, sua thong tin...) vi do co the la quan ly / NV xu ly.
+      const act = function (e) { try { return String((JSON.parse(e.data || 'null') || {}).action || ''); } catch (x) { return ''; } };
+      const dl = sorted.filter(function (e) { return e.historyType === 'UPDATE_ITEM' && /^DELIVER_(FAIL|SUCCESS)$/i.test(act(e)); }).pop();
+      rec.driver = dl ? String(dl.createdByName || '') + ' (' + Utilities.formatDate(new Date(dl.createdTime), tz, 'dd/MM HH:mm') + ')' : '';
       const le = sorted[sorted.length - 1];
       rec.last = typeof codEventText_ === 'function' ? codEventText_(le) : String(le.historyType || '');
       newSig['qhsig_' + o.order] = sig[o.order];

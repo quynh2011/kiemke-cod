@@ -1569,6 +1569,8 @@ function qhCat(o) {
   const st = String(o.status || '').toLowerCase();
   const fail = /không thành công|thất bại/.test(st);
   if (!fail && (/thành công|đã giao|chờ xác nhận giao lại|hoàn|trả hàng|luân chuyển trả/.test(st))) return 'done';
+  // Da gan: dang tren chuyen giao (trang thai / nhom Dang giao) hoac co luot xuat giao hom nay
+  if (/đang giao/.test(st) || /^DELIVERING/i.test(String(o.group || ''))) return 'assigned';
   const today = String((S.qh || {}).today || '').slice(0, 5); // dd/MM
   if (o.driverAt && today && String(o.driverAt).slice(0, 5) === today) return 'assigned';
   return 'todo';
@@ -1606,7 +1608,7 @@ async function qhRefreshAll() {
 }
 function paintQhRefresh() { const el = $('#qhLive'); if (el) el.innerHTML = S.qhBusy ? loader('Đang cập nhật trạng thái đơn từ GHN', 25, true, 'qhghn') : ''; }
 // Bao cao: dong = NV giao / buu cuc / nhom don / backlog; cot = Tong, Da gan, Da dut diem, Chua xu ly (kem ty le)
-const QH_GROUPS = [['driver', 'NV giao'], ['hub', 'Bưu cục'], ['group', 'Nhóm đơn'], ['backlog', 'Backlog']];
+const QH_GROUPS = [['driver', 'NV giao'], ['hub', 'Bưu cục'], ['group', 'Nhóm đơn']];
 function qhRowKey(o, g) {
   if (g === 'driver') return [o.hub + '|' + (o.driverId || drvName(o)), drvName(o), (o.driverId ? 'Mã ' + o.driverId : '') + (S.qhHub ? '' : (o.driverId ? ' · ' : '') + 'BC ' + o.hub)];
   if (g === 'hub') return [o.hub, String(o.hubName || o.hub).replace(/^\(\w+\)\s*/, ''), o.hub];
@@ -1624,14 +1626,19 @@ function renderQh() {
   const T = { all: base, assigned: by('assigned'), done: by('done'), todo: by('todo') };
   const bls = [...new Set(base.map(o => o.backlog || ''))].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
   const blN = {}; base.forEach(o => { blN[o.backlog || ''] = (blN[o.backlog || ''] || 0) + 1; });
-  const g = S.qhGroup === 'handle' ? 'driver' : S.qhGroup, R = {};
-  base.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], assigned: [], done: [], todo: [] };
-    r.all.push(o); r[qhCat(o)].push(o); });
-  const rows = Object.values(R).sort(g === 'backlog' ? (a, b) => (a.k < b.k ? -1 : 1) : (a, b) => b.todo.length - a.todo.length || b.all.length - a.all.length);
+  const g = QH_GROUPS.some(x => x[0] === S.qhGroup) ? S.qhGroup : 'driver', R = {};
+  base.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], assigned: [], done: [], todo: [], bl: {} };
+    r.all.push(o); r[qhCat(o)].push(o); (r.bl[o.backlog || ''] = r.bl[o.backlog || ''] || []).push(o); });
+  const TB = {}; base.forEach(o => { (TB[o.backlog || ''] = TB[o.backlog || ''] || []).push(o); });
+  const rows = Object.values(R).sort((a, b) => b.todo.length - a.todo.length || b.all.length - a.all.length);
   S.qhCells = {}; let cid = 0;
   const cell = (list, tot, title, cls) => { if (!list.length) return `<td class="num z">·${tot ? '<small>0%</small>' : ''}</td>`;
     const id = 'c' + (cid++); S.qhCells[id] = { title, codes: list.map(o => o.order) };
     return `<td class="num"><button class="cnum ${cls}" data-cell="${id}">${list.length}</button>${tot ? `<small>${pct(list.length, tot)}</small>` : ''}</td>`; };
+  const blCell = (list, title) => { if (!list || !list.length) return `<td class="num z">·</td>`;
+    const id = 'c' + (cid++); S.qhCells[id] = { title, codes: list.map(o => o.order) };
+    const ok = list.filter(o => qhCat(o) !== 'todo').length, r = ok / list.length;
+    return `<td class="num"><button class="cnum ${r >= .8 ? 'ok' : r >= .5 ? 'tot' : 'miss'}" data-cell="${id}">${list.length}</button><small>${pct(ok, list.length)}</small></td>`; };
   const nf = QH_F.filter(F => S.qhF[F.k]).length;
   const fpanel = QH_F.map(F => {
     const m = {}; d.orders.filter(o => qhPass(o, F.k)).forEach(o => { const v = F.val(o); m[v] = (m[v] || 0) + 1; });
@@ -1657,15 +1664,15 @@ function renderQh() {
     <div class="card qtab">
       <div class="qhead"><b>Báo cáo đơn quá hạn</b><span>${nA} đơn · dữ liệu ${esc(d.srcAt || '—')}</span></div>
       <div class="seg" style="margin-bottom:10px">${QH_GROUPS.map(x => `<button data-qg="${x[0]}" class="${g === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
-      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th><th>Đã gán</th><th>Dứt điểm</th><th>Chưa XL</th></tr></thead>
+      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th>${bls.map(b => `<th>${b ? blTag(b) : '(trống)'}</th>`).join('')}<th>Đã gán</th><th>Dứt điểm</th><th>Chưa XL</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><div class="nm">${esc(r.name)}</div>${r.sub ? `<div class="k">${esc(r.sub)}</div>` : ''}</td>
-          ${cell(r.all, 0, r.name + ' · tất cả', 'tot')}${cell(r.assigned, r.all.length, r.name + ' · đã gán', 'go')}
-          ${cell(r.done, r.all.length, r.name + ' · đã dứt điểm', 'ok')}${cell(r.todo, r.all.length, r.name + ' · chưa xử lý', 'miss')}</tr>`).join('')
-          || '<tr><td colspan="5" class="empty">Không có đơn nào</td></tr>'}</tbody>
-        ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(T.all, 0, 'Tất cả đơn quá hạn', 'tot')}${cell(T.assigned, nA, 'Tất cả · đã gán', 'go')}
-          ${cell(T.done, nA, 'Tất cả · đã dứt điểm', 'ok')}${cell(T.todo, nA, 'Tất cả · chưa xử lý', 'miss')}</tr></tfoot>` : ''}</table></div>
-      <div class="hint" style="margin-top:8px"><b>Đã gán</b>: có lượt xuất giao hôm nay · <b>Đã dứt điểm</b>: giao thành công / chờ xác nhận giao lại / chuyển hoàn · còn lại là <b>Chưa xử lý</b>.
-        Tỷ lệ nhỏ = so với tổng dòng. Bấm số để xem danh sách đơn.</div></div>`;
+          ${cell(r.all, nA, r.name + ' · tất cả', 'tot')}${bls.map(b => blCell(r.bl[b], r.name + ' · ' + (b ? 'quá ' + blLabel(b) : 'backlog trống'))).join('')}
+          ${cell(r.assigned, nA, r.name + ' · đã gán', 'go')}${cell(r.done, nA, r.name + ' · đã dứt điểm', 'ok')}${cell(r.todo, nA, r.name + ' · chưa xử lý', 'miss')}</tr>`).join('')
+          || `<tr><td colspan="${5 + bls.length}" class="empty">Không có đơn nào</td></tr>`}</tbody>
+        ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(T.all, nA, 'Tất cả đơn quá hạn', 'tot')}${bls.map(b => blCell(TB[b], 'Tất cả · ' + (b ? 'quá ' + blLabel(b) : 'backlog trống'))).join('')}
+          ${cell(T.assigned, nA, 'Tất cả · đã gán', 'go')}${cell(T.done, nA, 'Tất cả · đã dứt điểm', 'ok')}${cell(T.todo, nA, 'Tất cả · chưa xử lý', 'miss')}</tr></tfoot>` : ''}</table></div>
+      <div class="hint" style="margin-top:8px"><b>Đã gán</b>: đang giao / có lượt xuất giao hôm nay · <b>Đã dứt điểm</b>: giao thành công / chờ xác nhận giao lại / chuyển hoàn · còn lại là <b>Chưa xử lý</b>.<br>
+        Cột backlog: số đơn, % nhỏ = tỷ lệ đã xử lý (đã gán + dứt điểm) trong ô đó. Cột Tổng / Đã gán / Dứt điểm / Chưa XL: % = so với tổng ${nA} đơn. Bấm số để xem danh sách đơn.</div></div>`;
   paintQhRefresh();
   const hs = $('#qhHub'); if (hs) hs.onchange = () => { S.qhHub = hs.value; store.set('qhHub', S.qhHub); renderQh(); };
   document.querySelectorAll('[data-kpi]').forEach(b => b.onclick = () => { const k = b.dataset.kpi; qhList((k === 'all' ? 'Tất cả đơn quá hạn' : QH_CAT[k][0]), T[k].map(o => o.order)); });

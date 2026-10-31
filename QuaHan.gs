@@ -325,6 +325,9 @@ function qhByTracking_(todo, tok) {
         l.executor && l.executor.employee_id;
     });
     const lastTrip = trips[trips.length - 1];
+    // Gio xuat giao gan nhat: lay ca log chuyen giao khong co nguoi thuc hien (de phan loai Da gan cho dung)
+    const tripsAll = logs.filter(function (l) { return String(l.action_code || '').toUpperCase() === 'START_DELIVERY_TRIP' || String(l.status_name || '').toLowerCase().indexOf('đang giao hàng') >= 0; });
+    const lastTripAt = tripsAll.length ? tripsAll[tripsAll.length - 1] : lastTrip;
     const drvId = lastTrip ? String(lastTrip.executor.employee_id).trim() : '';
     const ns = drvId ? kkNhansu_(drvId) : null;
     const fails = failed.map(function (l, k) {
@@ -345,7 +348,7 @@ function qhByTracking_(todo, tok) {
       value: Number(oi.order_value) || 0, cod: oi.cod_amount === undefined || oi.cod_amount === null ? '' : Number(oi.cod_amount) || 0,
       attempts: failed.length, fails: fails,
       driver: drvId ? ((ns && ns.ten) || ('NV ' + drvId)) : '', driverId: drvId, driverPhone: '',
-      driverAt: lastTrip ? Utilities.formatDate(qhLogDate_(lastTrip), tz, 'dd/MM HH:mm') : '',
+      driverAt: lastTripAt ? Utilities.formatDate(qhLogDate_(lastTripAt), tz, 'dd/MM HH:mm') : '',
       trip: '', ward: hit['qhw_' + oi.to_ward_code] || '', address: addr,
       last: le.status_name ? String(le.status_name) + ' | ' + Utilities.formatDate(qhLogDate_(le), tz, 'dd/MM HH:mm') : '',
       ghnAt: Utilities.formatDate(new Date(), tz, 'dd/MM HH:mm') });

@@ -397,3 +397,26 @@ function qhSave_(me, b) {
   const logs = (qhLogs_()[order] || []);
   return { ok: true, order: order, handle: logs[logs.length - 1], logs: logs.slice(-10).reverse() };
 }
+
+// Chay tay trong Apps Script de kiem tra vi sao trang thai GHN khong cap nhat. Xem ket qua o "Nhat ky thuc thi".
+function QHKiemTra() {
+  const P = PropertiesService.getScriptProperties();
+  console.log('Lan cap nhat trang thai GHN gan nhat: ' + (P.getProperty('QH_STATUS_AT') || '(chua co)'));
+  console.log('Lan chay trigger gan nhat: ' + (P.getProperty('QH_TRIG') || '(chua co)'));
+  const trs = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'QHCapNhat'; });
+  console.log('Trigger QHCapNhat cua tai khoan nay: ' + trs.length + ' cai');
+  const src = qhSource_();
+  console.log('Sheet ' + QH_SRC + ': ' + src.rows.length + ' don, du lieu luc ' + src.at);
+  const tok = qhTrackToken_();
+  console.log('Token sheet ' + QH_TOKEN_SHEET + '!A1: ' + (tok ? 'co (' + tok.length + ' ky tu)' : 'TRONG -> dung API du phong'));
+  if (!src.rows.length) return;
+  const o = src.rows[0], t0 = Date.now();
+  try {
+    const r = UrlFetchApp.fetch(COD_CFG.PROXY_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ api_url: QH_TRACK_URL, headers: qhTrackHeaders_(tok), payload: { order_code: o.order, source: 'inside_system' } }) });
+    console.log('Tra thu don ' + o.order + ': HTTP ' + r.getResponseCode() + ', ' + (Date.now() - t0) + 'ms -> ' + r.getContentText().slice(0, 300));
+  } catch (e) { console.log('Tra thu don ' + o.order + ' LOI: ' + e.message); }
+  const t1 = Date.now();
+  const r2 = qhRefreshCore_(function (x) { return x.order === o.order; }, 1, true);
+  console.log('Cap nhat thu 1 don: ' + JSON.stringify(r2.info) + ', ' + (Date.now() - t1) + 'ms');
+}

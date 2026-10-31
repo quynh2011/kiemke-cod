@@ -1623,7 +1623,7 @@ function qhRowKey(o, g) {
   return [grpVN(o.group), grpVN(o.group), ''];
 }
 function qhTrigTxt(t) {
-  if (!t) return '';
+  if (!t) return DEMO ? '' : `<span class="bad">Tự cập nhật nền: <b>chưa rõ</b> – Apps Script chưa triển khai bản QuaHan.gs mới (Phiên bản mới)</span>`;
   if (!t.on) return `<span class="bad">Tự cập nhật nền: <b>chưa cài</b> (chạy hàm QHCaiTrigger trong Apps Script)</span>`;
   if (t.err) return `<span class="bad">Tự cập nhật nền ${esc(t.min)} phút/lần: <b>lỗi lúc ${esc(t.at)}</b> – ${esc(t.err)}</span>`;
   return `<span>Tự cập nhật nền ${esc(t.min)} phút/lần: <b>${t.at ? esc(t.at) : 'chưa chạy lần nào'}</b>${t.at ? ` (${esc(t.n)} đơn${t.fail ? ', lỗi ' + esc(t.fail) : ''})` : ''}</span>`;

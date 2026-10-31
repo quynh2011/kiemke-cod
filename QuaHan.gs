@@ -34,9 +34,12 @@ const QH_STATUSES = [
   { code: 'HU_HONG', name: 'Hàng hư hỏng / thất lạc - đã báo cáo', tone: 'bad', need: 'note' },
   { code: 'KHAC', name: 'Khác', tone: 'wait', need: 'note' }
 ];
-const QH_FRESH_SEC = 300;      // don vua tra GHN trong 5 phut -> khong tra lai (trigger chay 5 phut/lan)
-const QH_MAX_PER_CALL = 300;   // so don toi da tra trong 1 lan goi tu app
-const QH_CONC = 30;            // so request goi song song toi GHN (gap 429 se tu giam va thu lai)
+const QH_FRESH_SEC = 420;      // don vua tra GHN trong 7 phut -> app khong tra lai (trigger da tra 5 phut/lan)
+const QH_MAX_PER_CALL = 60;    // so don toi da tra trong 1 lan goi tu app (app tu goi tiep neu con)
+const QH_CONC = 5;             // so request goi cung luc toi GHN (gap 429 se tu giam va thu lai)
+const QH_GAP_MS = 400;         // nghi giua 2 lot request (ms) de khong bi GHN chan 429
+const QH_APP_SEC = 40;         // 1 lan goi tu app toi da 40 giay (Vercel cat o 60 giay)
+var QH_DEADLINE_ = 0;
 const QH_TRIGGER_MIN = 5;      // trigger tu cap nhat: 1 / 5 / 10 / 15 / 30 phut
 
 function qhHandle_(me, a, b) {
@@ -170,6 +173,7 @@ function qhRefreshCore_(pick, limit, one, force) {
   if (!todo.length) return { recs: [], info: { checked: 0, remain: 0, fail: 0 } };
   const tz = Session.getScriptTimeZone(), now = new Date();
   const tok = qhTrackToken_();
+  QH_DEADLINE_ = Date.now() + (force ? 300000 : QH_APP_SEC * 1000);
   const got = tok ? qhByTracking_(todo, tok) : qhByNhanh_(todo, one, cache);
   const recs = got.recs, newSig = got.newSig || {}, fresh = {};
   recs.forEach(function (r) { fresh['qho_' + r.order] = '1'; });
@@ -286,12 +290,13 @@ function qhTrackHeaders_(tok) {
 }
 // Goi nhieu request qua proxy (fetchAll theo dot), tu cho lai khi bi 429. Tra ve [json | null]
 function qhProxyAll_(reqs) {
+  // Goi deu tay: QH_CONC request/lot, nghi QH_GAP_MS giua cac lot. Gap 429 -> giam lot, nghi lau hon roi thu lai; het gio (QH_DEADLINE_) thi dung.
   const out = new Array(reqs.length);
-  let pending = reqs.map(function (_, i) { return i; }), wait = 3000;
-  for (let attempt = 0; attempt < 4 && pending.length; attempt++) {
+  let pending = reqs.map(function (_, i) { return i; }), step = QH_CONC, gap = QH_GAP_MS;
+  for (let attempt = 0; attempt < 5 && pending.length; attempt++) {
     const limited = [];
-    const step = attempt ? Math.max(4, Math.floor(QH_CONC / (attempt * 2))) : QH_CONC;
     for (let k = 0; k < pending.length; k += step) {
+      if (QH_DEADLINE_ && Date.now() > QH_DEADLINE_) { pending.slice(k).forEach(function (i) { limited.push(i); }); break; }
       const chunk = pending.slice(k, k + step);
       let resps;
       try {
@@ -300,17 +305,21 @@ function qhProxyAll_(reqs) {
             payload: JSON.stringify({ api_url: reqs[i].url, headers: reqs[i].headers, payload: reqs[i].payload }) };
         }));
       } catch (e) { chunk.forEach(function (i) { out[i] = null; }); continue; }
+      let hit = 0;
       resps.forEach(function (r, j) {
         const i = chunk[j];
         let js = null;
         try { js = JSON.parse(r.getContentText()); } catch (e) { /* bo qua */ }
-        if (r.getResponseCode() === 429 || (js && Number(js.code) === 429)) { limited.push(i); return; }
+        if (r.getResponseCode() === 429 || (js && Number(js.code) === 429)) { limited.push(i); hit++; return; }
         out[i] = js && (!js.code || Number(js.code) === 200) ? js : null;
       });
-      if (limited.length) Utilities.sleep(300);
+      if (hit) { step = Math.max(1, Math.floor(step / 2)); gap = Math.min(gap * 2, 8000); }
+      else if (gap > QH_GAP_MS) gap = Math.max(QH_GAP_MS, Math.floor(gap / 1.5));
+      if (k + step < pending.length) Utilities.sleep(gap);
     }
     pending = limited;
-    if (pending.length) { Utilities.sleep(wait); wait = Math.min(wait * 2, 20000); }
+    if (!pending.length || (QH_DEADLINE_ && Date.now() > QH_DEADLINE_)) break;
+    Utilities.sleep(Math.min(3000 * (attempt + 1), 10000));
   }
   return out;
 }

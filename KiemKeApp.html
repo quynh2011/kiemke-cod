@@ -115,8 +115,14 @@ a.btn { text-decoration: none; display: flex; align-items: center; justify-conte
 .bl { display: inline-flex; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 2px 7px; color: #fff; }
 .bl.b1 { background: #B45309; } .bl.b2 { background: #C2410C; } .bl.b3 { background: #991B1B; }
 .hd { display: inline-flex; font-size: 12px; border-radius: 6px; padding: 2px 7px; }
-.hd.go { background: #DCFCE7; color: #0B6E3F; } .hd.ok { background: var(--ok-soft); color: var(--ok); }
+.hd.go { background: #DCFCE7; color: #0B6E3F; } .hd.ok { background: #E0F2FE; color: #0E7490; }
 .hd.wait { background: var(--warn-soft); color: #92400E; } .hd.bad { background: var(--miss-soft); color: var(--miss); } .hd.none { background: var(--bg); color: var(--ink-2); }
+.qkpi .stat em { display: block; font-style: normal; font-size: 11.5px; font-weight: 700; margin-top: 2px; }
+.qkpi .stat.go b, .qkpi .stat.go em { color: #0B6E3F; } .qkpi .stat.ok b, .qkpi .stat.ok em { color: var(--ok); } .qkpi .stat.miss em { color: var(--miss); }
+.catbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; margin: 2px 0 6px; background: var(--line); }
+.catbar i { display: block; } .catbar i.go { background: #16A34A; } .catbar i.ok { background: #0E7490; } .catbar i.bad { background: var(--miss); }
+.tbl.qtbl td.num small { display: block; font-size: 10.5px; color: var(--ink-2); margin-top: 2px; font-weight: 600; }
+.cnum.go { background: #DCFCE7; border-color: #A7E3BD; color: #0B6E3F; } .cnum.ok { background: #E0F2FE; border-color: #A5D8F0; color: #0E7490; }
 .blbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; margin: 2px 0 6px; }
 .blbar i { display: block; } .blbar i.b1, .bllegend i.b1 { background: #B45309; } .blbar i.b2, .bllegend i.b2 { background: #C2410C; } .blbar i.b3, .bllegend i.b3 { background: #991B1B; }
 .bllegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 10px; }
@@ -414,7 +420,10 @@ const Demo = (function () {
     ['HU_HONG', 'Hàng hư hỏng / thất lạc - đã báo cáo', 'bad', 'note'], ['KHAC', 'Khác', 'wait', 'note']].map(x => ({ code: x[0], name: x[1], tone: x[2], need: x[3] }));
   const qhLogs = store.get('demo_qh', {});
   const qhRow = (hub, order, customer, group, backlog, status, att, fails, driver) => ({ hub, hubName: (hubs.find(h => h.code === hub) || {}).name, order, customer, group, backlog,
-    status, cur: hub, deliver: hub, value: 1500000 + order.length * 120000, attempts: att, fails, driver, last: 'Cập nhật đơn - giao thất bại | 29/10 18:30 | ' + driver.replace(/\s*\(.*\)$/, ''), ghnAt: '18:40' });
+    status, cur: hub, deliver: hub, value: 1500000 + order.length * 120000, cod: 1200000 + order.length * 95000, attempts: att, fails,
+    driver: driver.replace(/\s*\(.*\)$/, ''), driverId: String(3000000 + driver.length * 1371), driverAt: (driver.match(/\((.*)\)/) || [])[1] || '',
+    ward: 'Phường Phan Đình Phùng', address: 'Số ' + order.length + ' đường Lương Ngọc Quyến',
+    last: 'Giao hàng không thành công | 29/10 18:30', ghnAt: '18:40' });
   const qhOrders = [
     qhRow('20507000', 'GYM4GG6U', 'OTHER', 'DELIVERING', '96_120', 'Giao thất bại', 2, 'Lần 1 (27/10 10:00): Khách hẹn\nLần 2 (29/10 10:00): Không nghe máy', 'Nguyễn Văn Thế (29/10 10:00)'),
     qhRow('20507000', 'VNGH80023130611', 'TTS', 'DELIVERING_PRIORITY', '96_120', 'Đang giao', 1, '', 'Nguyễn Văn Thế (30/10 08:15)'),
@@ -424,8 +433,10 @@ const Demo = (function () {
   // Them don mau de bang tong hop co du lieu
   [['20507000', ['Nguyễn Văn Thế', 'Trần Ngọc Cương', 'Lê Văn Bình']], ['22524000', ['Trần Thị Thìn', 'Hoàng Văn Hoan']]].forEach(([hub, ds], hi) =>
     ds.forEach((dn, di) => { for (let k = 0; k < 3 + di * 2; k++) { const bl = ['96_120', '120_192', '192_288'][(k + di + hi) % 3];
-      qhOrders.push(qhRow(hub, 'GYM' + hub.slice(0, 2) + di + 'Q' + k + 'X', k % 3 ? 'OTHER' : 'TTS', k % 2 ? 'DELIVERING' : 'DELIVERING_PRIORITY', bl,
-        ['Giao thất bại', 'Đang giao', 'Lưu kho'][k % 3], k % 4, k % 3 ? 'Lần 1: Không liên lạc được người nhận' : '', dn + ' (30/10 0' + (k % 9) + ':10)')); } }));
+      const td = isoToVN(todayISO()).slice(0, 5);
+      qhOrders.push(qhRow(hub, 'GYM' + hub.slice(0, 2) + di + 'Q' + k + 'X', k % 3 ? 'OTHER' : 'TTS', ['DELIVERING', 'DELIVERING_PRIORITY', 'DELIVER', 'DELIVER_PRIORITY'][k % 4], bl,
+        ['Giao hàng không thành công', 'Đang giao hàng', 'Giao hàng thành công', 'Chờ xác nhận giao lại', 'Lưu kho', 'Đang chuyển hoàn'][(k + di) % 6], k % 4,
+        k % 3 ? 'Lần 1: Không liên lạc được người nhận' : '', dn + ' (' + (k % 2 ? td : '30/10') + ' 0' + (k % 9) + ':10)')); } }));
   const me = t => { const m = String(t || '').replace('demo-', ''), u = users[m];
     if (!u || !auth[m]) { const e = new Error('Phiên đăng nhập hết hạn'); e.auth = true; throw e; } return u; };
   const nowTxt = () => new Date().toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1547,21 +1558,31 @@ function userForm(u) {
 const blLabel = b => String(b || '').replace('_', '–') + (b ? 'h' : '');
 const blTone = b => { const n = parseInt(b, 10) || 0; return n >= 192 ? 'b3' : n >= 120 ? 'b2' : 'b1'; };
 const blTag = b => b ? `<span class="bl ${blTone(b)}">Quá ${esc(blLabel(b))}</span>` : '';
-function qhTone(name) { const st = ((S.qh || {}).statuses || []).find(x => x.name === name); return st ? st.tone : 'none'; }
-function hdTag(h) { return h ? `<span class="hd ${qhTone(h.status)}">${esc(h.status)}${h.date ? ' · ' + esc(h.date) : ''}</span>` : '<span class="hd none">Chưa xử lý</span>'; }
+// Nhom don GHN -> tieng Viet
+const QH_GROUP_VN = { DELIVER: 'Chờ giao', DELIVER_PRIORITY: 'Chờ giao (ưu tiên)', DELIVERING: 'Đang giao', DELIVERING_PRIORITY: 'Đang giao (ưu tiên)',
+  RETURN: 'Chờ trả', RETURNING: 'Đang trả', STORING: 'Lưu kho' };
+const grpVN = g => QH_GROUP_VN[String(g || '').toUpperCase()] || g || '(trống)';
+const drvName = o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ NV)';
+// Tu phan loai theo du lieu GHN: Da dut diem > Da gan (xuat giao hom nay) > Chua xu ly
+const QH_CAT = { done: ['Đã dứt điểm', 'ok'], assigned: ['Đã gán', 'go'], todo: ['Chưa xử lý', 'bad'] };
+function qhCat(o) {
+  const st = String(o.status || '').toLowerCase();
+  const fail = /không thành công|thất bại/.test(st);
+  if (!fail && (/thành công|đã giao|chờ xác nhận giao lại|hoàn|trả hàng|luân chuyển trả/.test(st))) return 'done';
+  const today = String((S.qh || {}).today || '').slice(0, 5); // dd/MM
+  if (o.driverAt && today && String(o.driverAt).slice(0, 5) === today) return 'assigned';
+  return 'todo';
+}
+const catTag = o => { const c = QH_CAT[qhCat(o)]; return `<span class="hd ${c[1]}">${c[0]}</span>`; };
 const QH_F = [
-  { k: 'group', label: 'Nhóm đơn', val: o => o.group || '' },
+  { k: 'group', label: 'Nhóm đơn', val: o => grpVN(o.group) },
   { k: 'customer', label: 'Khách hàng', val: o => o.customer || '' },
   { k: 'backlog', label: 'Backlog', val: o => o.backlog || '', name: v => v ? 'Quá ' + blLabel(v) : '(trống)' },
+  { k: 'cat', label: 'Phân loại', val: o => QH_CAT[qhCat(o)][0] },
   { k: 'status', label: 'Trạng thái GHN', val: o => o.status || '(chưa tra)' },
-  { k: 'handle', label: 'Tình trạng xử lý', val: o => o.handle ? o.handle.status : 'Chưa xử lý' },
-  { k: 'driver', label: 'NV giao', val: o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ)' }
+  { k: 'driver', label: 'NV giao', val: o => drvName(o) }
 ];
 function qhPass(o, skip) { return (!S.qhHub || o.hub === S.qhHub) && QH_F.every(F => F.k === skip || !S.qhF[F.k] || F.val(o) === S.qhF[F.k]); }
-function qhCounts(list, today) {
-  const done = list.filter(o => o.handle), todayDone = done.filter(o => o.handle.day === today);
-  return { all: list.length, todo: list.length - done.length, today: todayDone.length, hen: done.filter(o => /hẹn/i.test(o.handle.status)).length };
-}
 async function viewQh() {
   if (!S.qh) {
     $('#view').innerHTML = loader('Đang tải danh sách đơn quá hạn', 6);
@@ -1584,38 +1605,33 @@ async function qhRefreshAll() {
   finally { S.qhBusy = false; paintQhRefresh(); }
 }
 function paintQhRefresh() { const el = $('#qhLive'); if (el) el.innerHTML = S.qhBusy ? loader('Đang cập nhật trạng thái đơn từ GHN', 25, true, 'qhghn') : ''; }
-// Bao cao qua han dang BANG: dong = NV giao / buu cuc / tinh trang xu ly, cot = moc backlog. Bam so -> popup danh sach don.
-const QH_GROUPS = [['driver', 'NV giao'], ['hub', 'Bưu cục'], ['handle', 'Tình trạng XL'], ['group', 'Nhóm đơn']];
-const drvName = o => String(o.driver || '').replace(/\s*\(.*\)$/, '') || '(chưa rõ NV)';
+// Bao cao: dong = NV giao / buu cuc / nhom don / backlog; cot = Tong, Da gan, Da dut diem, Chua xu ly (kem ty le)
+const QH_GROUPS = [['driver', 'NV giao'], ['hub', 'Bưu cục'], ['group', 'Nhóm đơn'], ['backlog', 'Backlog']];
 function qhRowKey(o, g) {
   if (g === 'driver') return [o.hub + '|' + (o.driverId || drvName(o)), drvName(o), (o.driverId ? 'Mã ' + o.driverId : '') + (S.qhHub ? '' : (o.driverId ? ' · ' : '') + 'BC ' + o.hub)];
   if (g === 'hub') return [o.hub, String(o.hubName || o.hub).replace(/^\(\w+\)\s*/, ''), o.hub];
-  if (g === 'handle') return [o.handle ? o.handle.status : 'Chưa xử lý', o.handle ? o.handle.status : 'Chưa xử lý', ''];
-  return [o.group || '(trống)', o.group || '(trống)', ''];
+  if (g === 'backlog') return [String(parseInt(o.backlog, 10) || 0).padStart(5, '0') + o.backlog, o.backlog ? 'Quá ' + blLabel(o.backlog) : '(trống)', ''];
+  return [grpVN(o.group), grpVN(o.group), ''];
 }
+const pct = (n, d) => d ? (Math.round(n / d * 1000) / 10) + '%' : '';
 function renderQh() {
   const d = S.qh; if (!d || !$('#view')) return;
-  const hubsM = {}; d.orders.forEach(o => { const h = hubsM[o.hub] = hubsM[o.hub] || { code: o.hub, name: o.hubName, n: 0, todo: 0 }; h.n++; if (!o.handle) h.todo++; });
+  const hubsM = {}; d.orders.forEach(o => { const h = hubsM[o.hub] = hubsM[o.hub] || { code: o.hub, name: o.hubName, n: 0, todo: 0 }; h.n++; if (qhCat(o) === 'todo') h.todo++; });
   const hubs = Object.values(hubsM).sort((a, b) => b.todo - a.todo);
   const q = S.qhSearch.trim().toUpperCase();
-  const base = d.orders.filter(o => qhPass(o)).filter(o => !q || [o.order, o.customer, o.group, o.driver, o.hub, o.hubName, o.status].join(' ').toUpperCase().indexOf(q) >= 0);
-  const c = qhCounts(base, d.today);
-  const tabF = { todo: o => !o.handle, today: o => o.handle && o.handle.day === d.today, hen: o => o.handle && /hẹn/i.test(o.handle.status), all: () => true }[S.qhTab];
-  const rowsSrc = base.filter(tabF);
-  // Cot backlog (sap xep theo so gio)
+  const base = d.orders.filter(o => qhPass(o)).filter(o => !q || [o.order, o.customer, grpVN(o.group), o.driver, o.hub, o.hubName, o.status].join(' ').toUpperCase().indexOf(q) >= 0);
+  const by = c => base.filter(o => qhCat(o) === c);
+  const T = { all: base, assigned: by('assigned'), done: by('done'), todo: by('todo') };
   const bls = [...new Set(base.map(o => o.backlog || ''))].sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
   const blN = {}; base.forEach(o => { blN[o.backlog || ''] = (blN[o.backlog || ''] || 0) + 1; });
-  // Gom dong
-  const g = S.qhGroup, R = {};
-  rowsSrc.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], todo: 0, by: {} };
-    r.all.push(o); if (!o.handle) r.todo++; (r.by[o.backlog || ''] = r.by[o.backlog || ''] || []).push(o); });
-  const rows = Object.values(R).sort((a, b) => b.all.length - a.all.length || b.todo - a.todo);
+  const g = S.qhGroup === 'handle' ? 'driver' : S.qhGroup, R = {};
+  base.forEach(o => { const [k, name, sub] = qhRowKey(o, g); const r = R[k] = R[k] || { k, name, sub, all: [], assigned: [], done: [], todo: [] };
+    r.all.push(o); r[qhCat(o)].push(o); });
+  const rows = Object.values(R).sort(g === 'backlog' ? (a, b) => (a.k < b.k ? -1 : 1) : (a, b) => b.todo.length - a.todo.length || b.all.length - a.all.length);
   S.qhCells = {}; let cid = 0;
-  const cell = (list, title, cls) => { if (!list || !list.length) return `<td class="num z">·</td>`;
+  const cell = (list, tot, title, cls) => { if (!list.length) return `<td class="num z">·${tot ? '<small>0%</small>' : ''}</td>`;
     const id = 'c' + (cid++); S.qhCells[id] = { title, codes: list.map(o => o.order) };
-    return `<td class="num"><button class="cnum ${cls || ''}" data-cell="${id}">${list.length}</button></td>`; };
-  const tot = { all: rowsSrc, todo: rowsSrc.filter(o => !o.handle), by: {} };
-  rowsSrc.forEach(o => { (tot.by[o.backlog || ''] = tot.by[o.backlog || ''] || []).push(o); });
+    return `<td class="num"><button class="cnum ${cls}" data-cell="${id}">${list.length}</button>${tot ? `<small>${pct(list.length, tot)}</small>` : ''}</td>`; };
   const nf = QH_F.filter(F => S.qhF[F.k]).length;
   const fpanel = QH_F.map(F => {
     const m = {}; d.orders.filter(o => qhPass(o, F.k)).forEach(o => { const v = F.val(o); m[v] = (m[v] || 0) + 1; });
@@ -1624,7 +1640,9 @@ function renderQh() {
     return `<div class="fld"><label>${F.label}</label><select data-qf="${F.k}"><option value="">Tất cả</option>${keys.map(v =>
       `<option value="${esc(v)}"${S.qhF[F.k] === v ? ' selected' : ''}>${esc(F.name ? F.name(v) : v)} (${m[v] || 0})</option>`).join('')}</select></div>`;
   }).join('');
-  const tabName = { todo: 'chưa xử lý', today: 'xử lý hôm nay', hen: 'hẹn giao', all: 'quá hạn' }[S.qhTab];
+  const kpi = (k, label, cls) => { const n = T[k].length;
+    return `<button class="stat ${cls}" data-kpi="${k}"><b class="num">${n}</b><span>${label}</span>${k !== 'all' ? `<em>${pct(n, T.all.length) || '0%'}</em>` : ''}</button>`; };
+  const nA = T.all.length;
   $('#view').innerHTML = `
     ${hubs.length > 1 || S.qhHub ? `<div class="hubsel"><label for="qhHub">Bưu cục</label><select id="qhHub"><option value="">Tất cả ${hubs.length} bưu cục</option>${hubs.map(h =>
       `<option value="${esc(h.code)}"${h.code === S.qhHub ? ' selected' : ''}>${esc(h.code)}${h.name ? ' - ' + esc(h.name) : ''} (chưa xử lý ${h.todo}/${h.n})</option>`).join('')}</select></div>` : ''}
@@ -1632,29 +1650,25 @@ function renderQh() {
       ${nf ? `<button class="chip" id="qfClr">Xoá lọc</button>` : ''}<button class="chip" id="qhReload">Tải lại</button></div>
     ${S.qhFOpen ? `<div class="fpanel">${fpanel}</div>` : ''}
     <input class="inp" id="qhQ" placeholder="Tìm mã đơn, khách hàng, NV giao…" value="${esc(S.qhSearch)}" style="margin-bottom:10px">
-    <div class="stats">
-      <button class="stat${S.qhTab === 'all' ? ' on' : ''}" data-qt="all"><b class="num">${c.all}</b><span>Quá hạn</span></button>
-      <button class="stat miss${S.qhTab === 'todo' ? ' on' : ''}" data-qt="todo"><b class="num">${c.todo}</b><span>Chưa xử lý</span></button>
-      <button class="stat ok${S.qhTab === 'today' ? ' on' : ''}" data-qt="today"><b class="num">${c.today}</b><span>Xử lý hôm nay</span></button>
-      <button class="stat bad${S.qhTab === 'hen' ? ' on' : ''}" data-qt="hen"><b class="num">${c.hen}</b><span>Hẹn giao</span></button></div>
-    <div class="blbar">${bls.map(b => `<i class="${blTone(b)}" style="flex:${blN[b]}" title="Quá ${esc(blLabel(b))}: ${blN[b]}"></i>`).join('')}</div>
+    <div class="stats qkpi">${kpi('all', 'Quá hạn', '')}${kpi('assigned', 'Đã gán', 'go')}${kpi('done', 'Đã dứt điểm', 'ok')}${kpi('todo', 'Chưa xử lý', 'miss')}</div>
+    <div class="catbar">${['assigned', 'done', 'todo'].map(k => T[k].length ? `<i class="${QH_CAT[k][1]}" style="flex:${T[k].length}"></i>` : '').join('')}</div>
     <div class="bllegend">${bls.map(b => `<span><i class="${blTone(b)}"></i>Quá ${esc(blLabel(b))} <b>${blN[b]}</b></span>`).join('')}</div>
     <div id="qhLive" class="refreshline"></div>
     <div class="card qtab">
-      <div class="qhead"><b>Đơn ${tabName}</b><span>${rowsSrc.length} đơn · cập nhật ${esc(d.srcAt || '—')}</span></div>
+      <div class="qhead"><b>Báo cáo đơn quá hạn</b><span>${nA} đơn · dữ liệu ${esc(d.srcAt || '—')}</span></div>
       <div class="seg" style="margin-bottom:10px">${QH_GROUPS.map(x => `<button data-qg="${x[0]}" class="${g === x[0] ? 'on' : ''}">${x[1]}</button>`).join('')}</div>
-      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th>${S.qhTab === 'all' ? '<th>Chưa<br>XL</th>' : ''}
-        ${bls.map(b => `<th><span class="bl ${blTone(b)}">${esc(String(blLabel(b) || '?').replace(/h$/, ''))}</span></th>`).join('')}</tr></thead>
+      <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${QH_GROUPS.find(x => x[0] === g)[1]}</th><th>Tổng</th><th>Đã gán</th><th>Dứt điểm</th><th>Chưa XL</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><div class="nm">${esc(r.name)}</div>${r.sub ? `<div class="k">${esc(r.sub)}</div>` : ''}</td>
-          ${cell(r.all, r.name + ' · tất cả ' + tabName, 'tot')}${S.qhTab === 'all' ? cell(r.all.filter(o => !o.handle), r.name + ' · chưa xử lý', 'miss') : ''}
-          ${bls.map(b => cell(r.by[b], r.name + ' · quá ' + blLabel(b), '')).join('')}</tr>`).join('') || `<tr><td colspan="${3 + bls.length}" class="empty">Không có đơn nào</td></tr>`}</tbody>
-        ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(tot.all, 'Tất cả đơn ' + tabName, 'tot')}${S.qhTab === 'all' ? cell(tot.todo, 'Tất cả đơn chưa xử lý', 'miss') : ''}
-          ${bls.map(b => cell(tot.by[b], 'Tất cả · quá ' + blLabel(b), '')).join('')}</tr></tfoot>` : ''}</table></div>
-      <div class="hint" style="margin-top:8px">Cột màu = số giờ quá hạn. Bấm vào con số để xem danh sách đơn${d.canEdit ? ' và cập nhật xử lý' : ''}.</div></div>
-`;
+          ${cell(r.all, 0, r.name + ' · tất cả', 'tot')}${cell(r.assigned, r.all.length, r.name + ' · đã gán', 'go')}
+          ${cell(r.done, r.all.length, r.name + ' · đã dứt điểm', 'ok')}${cell(r.todo, r.all.length, r.name + ' · chưa xử lý', 'miss')}</tr>`).join('')
+          || '<tr><td colspan="5" class="empty">Không có đơn nào</td></tr>'}</tbody>
+        ${rows.length > 1 ? `<tfoot><tr><td><b>Tổng</b></td>${cell(T.all, 0, 'Tất cả đơn quá hạn', 'tot')}${cell(T.assigned, nA, 'Tất cả · đã gán', 'go')}
+          ${cell(T.done, nA, 'Tất cả · đã dứt điểm', 'ok')}${cell(T.todo, nA, 'Tất cả · chưa xử lý', 'miss')}</tr></tfoot>` : ''}</table></div>
+      <div class="hint" style="margin-top:8px"><b>Đã gán</b>: có lượt xuất giao hôm nay · <b>Đã dứt điểm</b>: giao thành công / chờ xác nhận giao lại / chuyển hoàn · còn lại là <b>Chưa xử lý</b>.
+        Tỷ lệ nhỏ = so với tổng dòng. Bấm số để xem danh sách đơn.</div></div>`;
   paintQhRefresh();
   const hs = $('#qhHub'); if (hs) hs.onchange = () => { S.qhHub = hs.value; store.set('qhHub', S.qhHub); renderQh(); };
-  document.querySelectorAll('[data-qt]').forEach(b => b.onclick = () => { S.qhTab = b.dataset.qt; renderQh(); });
+  document.querySelectorAll('[data-kpi]').forEach(b => b.onclick = () => { const k = b.dataset.kpi; qhList((k === 'all' ? 'Tất cả đơn quá hạn' : QH_CAT[k][0]), T[k].map(o => o.order)); });
   document.querySelectorAll('[data-qg]').forEach(b => b.onclick = () => { S.qhGroup = b.dataset.qg; store.set('qhGroup', S.qhGroup); renderQh(); });
   document.querySelectorAll('[data-cell]').forEach(b => b.onclick = () => { const c = S.qhCells[b.dataset.cell]; qhList(c.title, c.codes); });
   $('#qfTog').onclick = () => { S.qhFOpen = !S.qhFOpen; renderQh(); };
@@ -1670,11 +1684,11 @@ function qhList(title, codes) {
   S.qhBack = { title, codes };
   const bg = document.createElement('div'); bg.className = 'sheet-bg center'; bg.dataset.qlist = '1';
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button>
-    <h3 style="padding-right:36px">${esc(title)}</h3><div class="hint" style="margin:-6px 0 10px">${xs.length} đơn · bấm đơn để xem chi tiết${d.canEdit ? ' / cập nhật xử lý' : ''}</div>
+    <h3 style="padding-right:36px">${esc(title)}</h3><div class="hint" style="margin:-6px 0 10px">${xs.length} đơn · bấm đơn để xem chi tiết</div>
     <div class="qlist">${xs.map(o => `<button class="qrow" data-qo="${esc(o.order)}">
       <div class="r1"><b>${esc(o.order)}</b>${blTag(o.backlog)}</div>
-      <div class="r2">${o.cod ? '<b style="color:var(--brand)">' + money(o.cod) + ' đ</b> · ' : ''}${esc(o.customer)} · ${esc(o.group)} · ${esc(drvName(o))}${o.ward ? ' · ' + esc(o.ward) : ''}</div>
-      <div class="r3">${stTag(o.status)}${o.attempts !== '' && o.attempts != null ? `<span class="sub">giao ${esc(o.attempts)} lần</span>` : ''}${hdTag(o.handle)}</div></button>`).join('')}</div>
+      <div class="r2">${o.cod ? '<b style="color:var(--brand)">' + money(o.cod) + ' đ</b> · ' : ''}${esc(o.customer)} · ${esc(grpVN(o.group))} · ${esc(drvName(o))}${o.ward ? ' · ' + esc(o.ward) : ''}</div>
+      <div class="r3">${catTag(o)}${stTag(o.status)}${o.attempts !== '' && o.attempts != null ? `<span class="sub">giao ${esc(o.attempts)} lần</span>` : ''}</div></button>`).join('')}</div>
     <button class="btn light block" data-close style="margin-top:10px">Đóng</button></div>`;
   document.body.appendChild(bg);
   const close = () => { bg.remove(); S.qhBack = null; };
@@ -1682,6 +1696,7 @@ function qhList(title, codes) {
   bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
   bg.querySelectorAll('[data-qo]').forEach(b => b.onclick = () => { bg.remove(); qhOpen(b.dataset.qo); });
 }
+// Chi tiet 1 don (chi xem, khong cap nhat tay)
 function qhOpen(code, again) {
   const d = S.qh; const o = d && d.orders.find(x => x.order === code); if (!o) return;
   const old = document.querySelector('.sheet-bg.center[data-qorder]'); if (old) old.remove();
@@ -1690,9 +1705,9 @@ function qhOpen(code, again) {
   const bg = document.createElement('div'); bg.className = 'sheet-bg center' + (again ? ' noanim' : ''); bg.dataset.qorder = code;
   bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><button class="x" data-x aria-label="Đóng">×</button><h3>Đơn ${esc(o.order)}</h3>
     <div class="odlive">${fresh ? (o.ghnAt ? 'Cập nhật từ GHN lúc ' + esc(o.ghnAt) : '') : loader('Đang lấy trạng thái mới nhất từ GHN', 4, true, 'qh_' + code)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${stTag(o.status)}${blTag(o.backlog)}${hdTag(o.handle)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${catTag(o)}${stTag(o.status)}${blTag(o.backlog)}</div>
     <dl class="od">
-      <dt>Khách hàng</dt><dd>${esc(o.customer || '—')} · ${esc(o.group || '')}</dd>
+      <dt>Khách hàng</dt><dd>${esc(o.customer || '—')} · ${esc(grpVN(o.group))}</dd>
       ${o.cod !== '' && o.cod != null ? `<dt>COD</dt><dd class="num" style="color:var(--brand);font-weight:700">${money(o.cod)} đ</dd>`
         : `<dt>Giá trị hàng</dt><dd class="num" style="color:var(--brand);font-weight:700">${o.value ? money(o.value) + ' đ' : '—'}</dd>`}
       <dt>Số lần giao</dt><dd>${o.attempts !== '' && o.attempts != null ? esc(o.attempts) + ' lần' : '—'}</dd>
@@ -1700,43 +1715,20 @@ function qhOpen(code, again) {
       <dt>Địa chỉ giao</dt><dd>${esc([o.address, o.ward].filter(Boolean).filter((x, i, a) => i === 0 || a[0].indexOf(x) < 0).join(', ') || '—')}</dd>
       <dt>NV giao lần cuối</dt><dd>${esc(o.driver || '—')}${o.driverId ? ' · mã ' + esc(o.driverId) : ''}${o.driverAt ? `<br><span class="sub">Xuất giao lúc ${esc(o.driverAt)}</span>` : ''}${o.driverPhone ? `<br><a href="tel:${esc(o.driverPhone)}">${esc(o.driverPhone)}</a>` : ''}${o.trip ? `<br><span class="sub">Chuyến ${esc(o.trip)}</span>` : ''}</dd>
       <dt>Bưu cục</dt><dd>${hubLabel(o)}</dd>
-      <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}${o.deliver && o.deliver !== o.hub ? '<br><span class="sub">Kho giao: ' + esc(o.deliver) + '</span>' : ''}</dd>
+      <dt>Kho hiện tại</dt><dd>${esc(o.cur || '—')}${off ? ' <span class="tag miss">khác bưu cục</span>' : ''}</dd>
       <dt>Thao tác cuối</dt><dd>${esc(o.last || '—')}</dd>
     </dl>
-    ${d.canEdit ? `<form class="qform" id="qf"><b style="display:block;margin-bottom:8px">Cập nhật xử lý</b>
-      <select id="qfS" required><option value="">— Chọn tình trạng xử lý —</option>${d.statuses.map(x => `<option value="${x.code}" data-need="${x.need || ''}">${esc(x.name)}</option>`).join('')}</select>
-      <input type="date" id="qfD" hidden>
-      <textarea id="qfN" placeholder="Ghi chú (gán cho ai, hẹn khách mấy giờ…)"></textarea>
-      <div class="err" id="qfE"></div><button class="btn primary block" id="qfB">Lưu xử lý</button></form>` : ''}
-    <div class="h2" style="margin-top:4px">Lịch sử xử lý<small>${(o.logs || []).length}</small></div>
-    ${(o.logs || []).map(l => `<div class="qlog"><b>${esc(l.status)}${l.date ? ' · hẹn ' + esc(l.date) : ''}</b><span>${esc(l.by)} · ${esc(l.role || '')} · ${esc(l.time)}</span>${l.note ? '<span>' + esc(l.note) + '</span>' : ''}</div>`).join('') || '<div class="hint">Chưa có ai cập nhật.</div>'}
-    ${S.qhBack ? `<button class="btn light block" data-back style="margin-top:10px">← Quay lại danh sách</button>` : ''}
+    ${S.qhBack ? `<button class="btn light block" data-back>← Quay lại danh sách</button>` : ''}
     <button class="btn light block" data-close style="margin-top:8px">Đóng</button></div>`;
   document.body.appendChild(bg);
   const close = () => { bg.remove(); S.qhBack = null; };
   bg.onclick = e => { if (e.target === bg) close(); };
   bg.querySelectorAll('[data-x],[data-close]').forEach(b => b.onclick = close);
   const bk = bg.querySelector('[data-back]'); if (bk) bk.onclick = () => { bg.remove(); qhList(S.qhBack.title, S.qhBack.codes); };
-  const f = bg.querySelector('#qf');
-  if (f) {
-    const sel = f.querySelector('#qfS'), dt = f.querySelector('#qfD');
-    sel.onchange = () => { const need = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.need; dt.hidden = need !== 'date';
-      f.querySelector('#qfN').placeholder = need === 'note' ? 'Ghi chú (bắt buộc)' : 'Ghi chú (gán cho ai, hẹn khách mấy giờ…)'; };
-    f.onsubmit = async e => {
-      e.preventDefault();
-      const btn = f.querySelector('#qfB'); btn.disabled = true; f.querySelector('#qfE').textContent = 'Đang lưu…';
-      try {
-        const r = await api('qhSave', { order: code, status: sel.value, date: dt.value, note: f.querySelector('#qfN').value });
-        o.handle = r.handle; o.logs = r.logs; toast('Đã lưu xử lý đơn ' + code);
-        renderQh(); qhOpen(code, true);
-      } catch (err) { f.querySelector('#qfE').textContent = err.message; btn.disabled = false; }
-    };
-  }
   if (fresh) return;
   api('qhRefresh', { order: code }).then(r => {
     S.qhAt[code] = Date.now();
     if (r.order) Object.assign(o, r.order);
-    if (r.logs) o.logs = r.logs, o.handle = r.logs[0] || o.handle;
     if (S.tab === 'qh') renderQh();
     if (document.body.contains(bg)) qhOpen(code, true);
   }).catch(() => { const el = bg.querySelector('.odlive'); if (el) el.textContent = 'Chưa lấy được dữ liệu mới từ GHN — đang hiện dữ liệu gần nhất.'; });

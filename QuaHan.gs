@@ -226,7 +226,8 @@ function qhByNhanh_(todo, one, cache) {
       fails: old.fails || '', driver: old.driver || '', last: old.last || '',
       driverId: old.driverId || '', driverPhone: old.driverPhone || '', trip: old.trip || '' };
     const x = drv[o.order];
-    if (x) { rec.driverId = String(x.driverId || ''); rec.driver = String(x.driverName || ''); rec.driverPhone = String(x.driverPhone || ''); rec.trip = String(x.tripCode || ''); }
+    if (x) { rec.driverId = String(x.driverId || ''); rec.driver = String(x.driverName || ''); rec.driverPhone = String(x.driverPhone || ''); rec.trip = String(x.tripCode || '');
+      if (x.startedAt) rec.driverAt = Utilities.formatDate(new Date(x.startedAt), Session.getScriptTimeZone(), 'dd/MM HH:mm'); }
     const ev = hist[o.order];
     if (ev && ev.length) {
       const a = typeof codDeliveryAttempts_ === 'function' ? codDeliveryAttempts_(ev) : { count: '', fails: '' };
